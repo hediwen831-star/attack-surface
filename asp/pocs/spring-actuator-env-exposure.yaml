@@ -1,0 +1,47 @@
+id: spring-actuator-env-exposure
+
+info:
+  name: Spring Boot Actuator 敏感端点未授权访问
+  severity: high
+  author: hediwen
+  tags: [spring, actuator, unauth, information-disclosure]
+  description: |
+    Spring Boot Actuator 端点未做访问控制。其中 /actuator/env 会返回应用
+    全部环境变量与配置属性（数据库连接串、Redis 密码、第三方 API Key 等），
+    /actuator/heapdump 甚至可直接下载堆内存转储。
+    这是 Spring 应用最常见的未授权访问问题，常直接导致凭据泄露。
+  reference:
+    - https://docs.spring.io/spring-boot/docs/current/reference/html/actuator.html
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/actuator/env"
+      - "{{BaseURL}}/env"
+      - "{{BaseURL}}/actuator"
+
+    matchers-condition: and
+
+    matchers:
+      - type: status
+        status: [200]
+
+      # Actuator 的响应是结构化 JSON，特征非常稳定
+      - type: word
+        part: body
+        words:
+          - "activeProfiles"
+          - "propertySources"
+        condition: and
+
+      - type: dsl
+        dsl:
+          - "len(body) > 200"
+        condition: and
+
+    extractors:
+      - type: regex
+        part: body
+        name: profiles
+        regex:
+          - '"activeProfiles"\\s*:\\s*\\[([^\\]]*)\\]'

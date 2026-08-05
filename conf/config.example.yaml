@@ -1,0 +1,30 @@
+# ASP 配置示例。
+# 复制为 config.yaml 后按需修改，或直接用 `asp init` 生成。
+#
+# 环境变量可覆盖任意字段，规则：ASP_<SECTION>_<FIELD>
+#   例：ASP_DISCOVER_CONCURRENCY=300 覆盖 discover.concurrency
+
+http:
+  timeout: 10.0
+  retries: 2
+  # 测绘对象大量使用自签名证书，开启校验会漏报，因此默认关闭
+  verify_ssl: false
+  user_agent: "Mozilla/5.0 (compatible; ASP/0.1; +https://github.com/)"
+
+discover:
+  # 资产来源。crtsh 为被动源（不碰目标），brute 为主动源（会查目标 DNS）
+  sources: [crtsh, brute]
+  concurrency: 100
+  # 每秒请求上限。这个值不是调优参数，是安全底线 ——
+  # 不限速的扫描等同于对目标发起 DoS。
+  rate_limit: 50.0
+  wordlist: null          # null 表示使用内置字典
+  brute_concurrency: 200
+
+engine:
+  poc_dirs: [pocs]        # 相对路径按 asp 包目录解析
+  severity: [critical, high, medium, low, info]
+  tags: []
+
+database: asp.db
+log_level: INFO

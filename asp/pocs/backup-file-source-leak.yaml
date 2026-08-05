@@ -1,0 +1,43 @@
+id: backup-file-source-leak
+
+info:
+  name: 源码备份文件可下载
+  severity: high
+  author: hediwen
+  tags: [backup, exposure, source-leak]
+  description: |
+    站点存在可下载的源码备份文件（.zip / .tar.gz / .bak / .sql）。
+    这类文件常包含完整源码与数据库导出，一旦泄露等同于源码与数据双失守。
+    常见成因是运维图方便把备份放在 Web 根目录，且未配置访问限制。
+  reference:
+    - https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/www.zip"
+      - "{{BaseURL}}/web.zip"
+      - "{{BaseURL}}/backup.zip"
+      - "{{BaseURL}}/wwwroot.zip"
+      - "{{BaseURL}}/db.sql"
+      - "{{BaseURL}}/backup.sql"
+      - "{{BaseURL}}/index.php.bak"
+      - "{{BaseURL}}/.index.php.swp"
+
+    # and 组合：既要状态 200，又要响应体真的是压缩包/SQL，
+    # 且长度足够大（排除「返回首页 HTML」这类伪 200）。
+    matchers-condition: and
+
+    matchers:
+      - type: status
+        status: [200]
+
+      - type: regex
+        part: header
+        regex:
+          - "Content-Type:\\s*(application/(zip|x-zip-compressed|octet-stream|x-tar|sql)|application/x-download)"
+
+      - type: dsl
+        dsl:
+          - "len(body) > 500"
+        condition: and

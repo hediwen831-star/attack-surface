@@ -1,0 +1,44 @@
+# 统一行尾策略。
+#
+# 为什么需要这个文件：
+#   Windows 上 git 默认 core.autocrlf=true，会把仓库里的 LF 转成 CRLF 写入工作区，
+#   提交时再转回去。这带来两个问题：
+#     1. 团队里有人配错 autocrlf，整个仓库会显示「全部文件被修改」
+#     2. 带 shebang 的 shell 脚本一旦变成 CRLF，在 Linux 上直接报
+#        "/usr/bin/env: 'bash\r': No such file or directory"
+#
+# 显式声明之后，行尾不再依赖每个人的本地配置 —— 仓库说了算。
+
+* text=auto eol=lf
+
+# 源码与文档：统一 LF
+*.py      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.json    text eol=lf
+*.md      text eol=lf
+*.toml    text eol=lf
+*.txt     text eol=lf
+*.cfg     text eol=lf
+*.ini     text eol=lf
+
+# Shell 脚本必须是 LF，否则在 Linux 上无法执行
+*.sh      text eol=lf
+
+# Windows 批处理必须是 CRLF
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# 二进制文件不做行尾转换（否则文件会被损坏）
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.pdf     binary
+*.zip     binary
+*.db      binary
+*.exe     binary
+
+# 扫描产物与 CI 日志不参与语言统计
+*.db      linguist-generated
