@@ -60,7 +60,7 @@ x: str | None = None                        # 3.10+ 的联合类型语法
 
 | 工具 | 用途 | 配置位置 |
 |---|---|---|
-| **pytest** ≥ 8.0 | 单元测试（112 个用例） | `pyproject.toml` |
+| **pytest** ≥ 8.0 | 单元测试（196 个用例） | `pyproject.toml` |
 | **pytest-asyncio** | 异步测试支持 | `asyncio_mode = "auto"` |
 | **ruff** | lint + 部分格式化 | `[tool.ruff]`，零告警 |
 | **GitHub Actions** | CI（3 个 Python 版本矩阵） | `.github/workflows/ci.yml` |
@@ -428,6 +428,121 @@ unchanged = current & baseline
 前者只能回答「现在有什么」，后者能回答「**相比上次，多了什么**」——
 而新增资产往往正是最需要关注的（新上线的服务、临时开的后门端口）。
 
+### 4.6 两阶段 banner 抓取
+
+不同服务的握手方式完全不同，用一套逻辑抓 banner 必然有一半服务拿不到信息：
+
+| 服务类型 | 行为 | 应对策略 |
+|---|---|---|
+| SSH / FTP / SMTP / MySQL | **服务端主动发 banner** | 连上直接读 |
+| HTTP / HTTPS | 服务端等客户端先说话 | 需要主动发 `GET / HTTP/1.0` |
+
+所以实现成两阶段：
+
+```python
+# 阶段 1：静默读（超时 2 秒）
+banner = await _read_banner(reader, BANNER_READ_TIMEOUT)
+
+# 阶段 2：没读到内容且端口像 HTTP，就主动发请求
+if not banner and port in HTTP_LIKE_PORTS:
+    banner = await _probe_http(writer, reader, host, port)
+```
+
+**「读到一点就返回」而不是「读满才返回」**：很多服务发完 banner 就等待输入，
+如果一直等到 EOF，会白等一个完整超时（3 秒 × 每个开放端口）。
+
+HTTP 探测里 `Host` 头用实际 host 而不是 IP —— 虚拟主机环境下不同的 Host
+会返回不同站点，用 IP 可能拿到默认站点甚至直接 404，导致指纹失真。
+
+### 4.7 为什么 favicon 是识别同源系统的最强单特征
+
+页面标题、响应头、正文关键字都能被轻易修改或伪造，但 `favicon.ico` 通常
+**从模板或产品原样拷贝**，很少有人会替换它。所以只要两个站点用了同一套系统，
+favicon 的哈希就大概率相同。
+
+算法（Shodan / FOFA 用的就是这套）：
+
+```
+hash = mmh3.hash(base64.encodebytes(favicon_bytes))
+```
+
+**两个容易踩的坑**：
+
+1. 是 **mmh3（MurmurHash3 x86 32-bit）**，不是 md5，也不是 Python 内置 `hash()`
+2. base64 用的是 **带换行的 `encodebytes`**（等价于 MIME 编码），
+   不是 `b64encode`。两者结果不同，用错了就与所有公开指纹库对不上
+
+`b64encode` vs `encodebytes` 的差异由测试 `test_favicon_hash_uses_encodebytes_not_b64encode`
+锁住 —— 这类「看起来一样但结果不同」的细节，不写测试迟早会被改错。
+
+**为什么自己实现 MurmurHash3 而不 `pip install mmh3`**
+
+`mmh3` 是 C 扩展，在部分平台需要编译。本项目坚持「运行时依赖只有 3 个」，
+而 MurmurHash3 是公开的确定性算法，纯 Python 实现只有 40 行。
+
+**自研算法的正确性怎么保证** —— 这是关键问题，答案是**交叉验证**：
+
+```
+用官方 mmh3 库作为参照，对多种输入逐字节比对：
+  b'' / b'a' / b'hello' / b'0123456789' / bytes(range(256)) / b'x'*1000
+  + 长度 0~8 全部覆盖（专门验证最容易写错的「尾部不足 4 字节」分支）
+  + favicon 场景（验证 base64 编码方式一致）
+→ 实测结果：与官方库完全一致
+```
+
+测试里用 `pytest.importorskip("mmh3")` —— mmh3 是 dev 依赖（只用于交叉验证），
+运行时不需要它；缺失时测试自动跳过而不是失败。
+
+**这条经验值得单独记住：自己实现的东西不能自己验证自己。**
+
+### 4.8 指纹识别的置信度累加
+
+单一特征（尤其单个关键字）误报率很高：正文里出现 "wordpress"
+可能只是一篇提到 WordPress 的文章。
+
+所以规则命中后**累加置信度**，只有累积到阈值才认为组件存在：
+
+```yaml
+# 一条弱规则命中 → 0.4，低于阈值 0.5 → 不输出
+- name: WordPress
+  confidence: 0.4
+  body: ['wp-content/']
+
+# 两条同时命中 → 0.4 + 0.4 = 0.8 → 输出
+- name: WordPress
+  confidence: 0.4
+  body: ['wp-includes/']
+```
+
+这带来一个反直觉但正确的编写方式：**同一个组件应该拆成多条弱规则，
+而不是一条强规则**。因为「有几个独立特征支持这个结论」比
+「我把这条规则写得很确定」更接近事实。
+
+这与 PoC 引擎的置信度设计是同一个思路 —— 让结论附带「我有多确定」。
+
+### 4.9 报告为什么要跨任务聚合
+
+踩过的坑：最初报告只读「最近一次任务」，结果
+
+```
+asp portscan 127.0.0.1 --save     → 任务 A：端口、组件
+asp poc run http://127.0.0.1:8080 --save → 任务 B：漏洞
+asp report 127.0.0.1
+→ 开放端口 0   识别组件 0   发现漏洞 3
+```
+
+端口和组件数据挂在任务 A 的资产上，而报告只看了任务 B。
+
+修正后：**报告聚合该 target 下全部任务的数据**，两条配套的修正：
+
+1. 查端口要用**未去重**的 asset id —— 去重后的 assets 只保留每个值的最新一条，
+   而端口可能挂在被丢弃的那条上（portscan 与 poc run 各自创建了一条 `127.0.0.1`）
+2. `Vuln` 表补上 `task_id` 字段 —— 独立 PoC 扫描产生的漏洞没有上游组件记录，
+   靠 `component → service → port → asset` 这条链路永远反查不到
+
+**这两条都是「数据模型没有为真实使用路径设计」导致的**，
+只有在跑完完整链路（而不是只测单个模块）时才会暴露。
+
 ---
 
 ## 五、数据模型
@@ -459,7 +574,7 @@ ScanTask ──< Asset ──< Port ──< Service ──< Component ──< Vu
 | 指标 | 数值 |
 |---|---|
 | Python 源码 | 约 3,000 行（不含测试与文档） |
-| 单元测试 | 112 个用例，约 1,250 行 |
+| 单元测试 | 196 个用例，约 2,400 行 |
 | 测试是否依赖网络 | **否**，全部通过 monkeypatch 替换 DNS/HTTP |
 | ruff 告警 | 0 |
 | 运行时依赖 | 3 个 |

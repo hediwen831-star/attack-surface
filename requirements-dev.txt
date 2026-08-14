@@ -4,3 +4,8 @@
 pytest>=8.0
 pytest-asyncio>=0.23
 ruff>=0.5
+
+# 交叉验证用：fingerprint.py 里的 MurmurHash3 是纯 Python 实现（为了零运行时依赖），
+# 测试时用官方 mmh3 库做参照，确保自研实现与标准算法逐字节一致。
+# 缺失时相关测试会自动跳过，不会导致 CI 失败。
+mmh3>=4.0

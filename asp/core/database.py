@@ -249,7 +249,30 @@ class Vuln(Base):
     __tablename__ = "vuln"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    component_id: Mapped[int] = mapped_column(ForeignKey("component.id"), index=True, nullable=True)
+
+    task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("scan_task.id"), index=True, nullable=True
+    )
+    """所属扫描任务。
+
+    为什么漏洞要【直接】挂 task，而不是靠 component 反查回来：
+    独立 PoC 扫描（`asp poc run`）产生的漏洞没有上游组件记录
+    （component_id 为 NULL），靠 component → service → port → asset 这条链路
+    永远反查不到它们 —— 结果就是报告里永远显示「发现漏洞 0 个」。
+
+    加这个字段是踩坑之后的修正：数据模型不该因为「没有上游记录」
+    就把一次真实的发现丢掉。
+    """
+
+    component_id: Mapped[int | None] = mapped_column(
+        ForeignKey("component.id"), index=True, nullable=True
+    )
+    """关联的组件。
+
+    允许为 NULL —— 有些漏洞是直接在服务或端口上测出来的，
+    或者来自一次独立的 PoC 扫描任务（没有先做指纹识别），
+    此时不存在对应的组件记录。强制非空会导致这类发现写不进库。
+    """
 
     poc_id: Mapped[str] = mapped_column(String(128), index=True)
     """命中的 PoC 标识。"""

@@ -64,6 +64,33 @@ class DiscoverConfig:
     brute_concurrency: int = 200
     """DNS 爆破并发数 —— DNS 查询轻量，可以比其他源高。"""
 
+    # ------------------------------------------------------------ 端口扫描
+
+    ports: str = "top"
+    """端口范围表达式。
+
+    支持 ``"top"``（内置常见端口表）、``"all"``（1-65535）、
+    ``"80,443"``、``"8000-8010"`` 以及逗号混合写法。
+    """
+
+    port_concurrency: int = 200
+    """端口扫描并发连接数。"""
+
+    port_timeout: float = 3.0
+    """单端口连接超时（秒）。
+
+    内网目标可以调到 1.0 提速；跨公网目标建议 3.0 以上，
+    否则会把「响应慢」误判成 ``filtered``。
+    """
+
+    # ------------------------------------------------------------ 指纹识别
+
+    fingerprint_enabled: bool = True
+    """是否启用 Web 指纹识别。"""
+
+    fingerprint_rules: list[str] = field(default_factory=lambda: ["rules"])
+    """指纹规则目录。相对路径相对于 asp 包目录解析。"""
+
 
 @dataclass
 class EngineConfig:
@@ -182,6 +209,16 @@ class Config:
             raise ConfigError("discover.concurrency 必须 >= 1", got=self.discover.concurrency)
         if self.discover.rate_limit <= 0:
             raise ConfigError("discover.rate_limit 必须 > 0", got=self.discover.rate_limit)
+        if self.discover.port_concurrency < 1:
+            raise ConfigError(
+                "discover.port_concurrency 必须 >= 1", got=self.discover.port_concurrency
+            )
+        if self.discover.port_timeout <= 0:
+            raise ConfigError(
+                "discover.port_timeout 必须 > 0", got=self.discover.port_timeout
+            )
+        if not str(self.discover.ports).strip():
+            raise ConfigError("discover.ports 不能为空")
         if self.http.timeout <= 0:
             raise ConfigError("http.timeout 必须 > 0", got=self.http.timeout)
         if self.http.retries < 0:

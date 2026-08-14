@@ -29,7 +29,11 @@ from .exceptions import AspError, ConfigError
 from .logger import get_logger, setup_logging
 from .plugins.engine import scan_target, to_json
 from .plugins.loader import load_pocs
+from .report import load_target_report
+from .report import render as render_report
+from .services.host import persist_host_report, scan_and_fingerprint
 from .services.subdomain import collect_subdomains, diff_tasks, persist_report
+from .services.vuln import persist_engine_result
 
 logger = get_logger("cli")
 
@@ -278,6 +282,10 @@ def cmd_poc_run(args: argparse.Namespace, config: Config) -> int:
 
     result = asyncio.run(_run())
 
+    if args.save:
+        count = persist_engine_result(result, config)
+        logger.info("saved_to_db target=%s vulns=%d db=%s", result.target, count, config.database)
+
     if args.json:
         text = to_json(result)
     else:
@@ -320,6 +328,129 @@ def cmd_poc_run(args: argparse.Namespace, config: Config) -> int:
 
     # 退出码约定：有命中返回 1，便于在 CI / 流水线里用返回码判断
     return 1 if result.vulns else 0
+
+
+def cmd_portscan(args: argparse.Namespace, config: Config) -> int:
+    """``asp portscan`` —— 端口扫描与服务识别。"""
+    host_report = asyncio.run(
+        scan_and_fingerprint(
+            args.host,
+            config,
+            ports=args.ports,
+            with_favicon=not args.no_favicon,
+        )
+    )
+
+    if args.save:
+        persist_host_report(host_report, config)
+        logger.info("saved_to_db host=%s db=%s", host_report.host, config.database)
+
+    components = host_report.all_components
+
+    if args.json:
+        payload = {
+            "host": host_report.host,
+            "elapsed": round(host_report.elapsed, 2),
+            "open_ports": host_report.open_ports,
+            "by_service": host_report.by_service(),
+            "ports": [p.to_dict() for p in host_report.ports if p.is_open],
+            "components": [c.to_dict() for c in components],
+            "favicons": {str(k): v for k, v in host_report.favicons.items()},
+            "errors": host_report.errors,
+        }
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+    else:
+        print()
+        print(f"目标: {host_report.host}")
+        print(f"耗时: {host_report.elapsed:.2f}s")
+        print(f"开放端口: {len(host_report.open_ports)} 个")
+        print()
+
+        open_ports = [p for p in host_report.ports if p.is_open]
+        if open_ports:
+            rows = []
+            for item in open_ports:
+                service = item.service
+                rows.append(
+                    [
+                        str(item.port),
+                        service.name or "unknown",
+                        (f"{service.product} {service.version}".strip()) or "-",
+                        f"{item.elapsed:.2f}s",
+                        (item.banner.splitlines()[0][:34] if item.banner else "-"),
+                    ]
+                )
+            _print_table(["端口", "服务", "产品/版本", "耗时", "banner 首行"], rows, [8, 12, 26, 8, 36])
+        else:
+            print("(无开放端口)")
+
+        if components:
+            print()
+            print("识别到的组件:")
+            rows = [
+                [
+                    c.name,
+                    c.version or "-",
+                    c.category or "-",
+                    f"{c.confidence:.2f}",
+                ]
+                for c in components
+            ]
+            _print_table(["组件", "版本", "类别", "置信度"], rows, [24, 14, 14, 8])
+
+        if host_report.favicons:
+            print()
+            print("favicon 哈希（可用于同源系统比对）:")
+            for port, value in sorted(host_report.favicons.items()):
+                print(f"  :{port}  {value}")
+
+        by_service = host_report.by_service()
+        if by_service:
+            print()
+            print("按服务统计: " + ", ".join(f"{k}={v}" for k, v in sorted(by_service.items())))
+
+        text = json.dumps(
+            [p.to_dict() for p in open_ports], ensure_ascii=False, indent=2
+        )
+
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        logger.info("output_written path=%s", args.output)
+
+    return 0
+
+
+def cmd_report(args: argparse.Namespace, config: Config) -> int:
+    """``asp report`` —— 从数据库汇总生成报告。"""
+    data = load_target_report(config, args.target)
+
+    if not data.get("has_data"):
+        print(f"目标 {args.target} 在数据库中没有任何扫描记录。")
+        print("提示：先用 `--save` 跑一次扫描（subdomain / portscan），或执行 `asp poc run`。")
+        return 1
+
+    try:
+        text = render_report(data, args.format)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        stats = data.get("stats", {})
+        logger.info(
+            "report_written path=%s format=%s assets=%d ports=%d components=%d vulns=%d",
+            args.output,
+            args.format,
+            stats.get("asset_count", 0),
+            stats.get("open_port_count", 0),
+            stats.get("component_count", 0),
+            stats.get("vuln_count", 0),
+        )
+    else:
+        print(text)
+
+    return 0
 
 
 def cmd_init(args: argparse.Namespace, config: Config) -> int:
@@ -377,6 +508,10 @@ def build_parser() -> argparse.ArgumentParser:
   asp poc list --severity high,critical          只看高危 PoC
   asp poc run http://target.local                对目标执行全部 PoC
   asp poc run http://target.local --poc git-config-exposure
+  asp portscan 127.0.0.1                         端口扫描 + 服务识别（内置常见端口表）
+  asp portscan 127.0.0.1 --ports 1-1024 --save   指定范围并落库
+  asp report 127.0.0.1 -f html -o report.html    生成 HTML 报告
+  asp report example.com -f md                   生成 Markdown 报告
   asp init                                       生成配置模板
 
 免责声明：本工具仅用于授权范围内的安全测试与自有资产测绘。
@@ -426,9 +561,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_poc_run.add_argument("--dir", help="额外 PoC 目录")
     p_poc_run.add_argument("--concurrency", type=int, default=20, help="同时执行的 PoC 数")
     p_poc_run.add_argument("--no-control", action="store_true", help="关闭负向对照校验（会增多误报）")
+    p_poc_run.add_argument("--save", action="store_true", help="结果写入数据库（生成报告需要）")
     p_poc_run.add_argument("--json", action="store_true", help="以 JSON 输出")
     p_poc_run.add_argument("-o", "--output", help="结果写入文件")
     p_poc_run.set_defaults(func=cmd_poc_run)
+
+    # --- portscan
+    p_port = subparsers.add_parser("portscan", help="端口扫描与服务识别")
+    p_port.add_argument("host", help="目标主机（IP 或域名）")
+    p_port.add_argument(
+        "--ports",
+        help="端口表达式：top（默认）/ all / 80,443 / 8000-8010 / 混合写法",
+    )
+    p_port.add_argument("--no-favicon", action="store_true", help="跳过 favicon 哈希获取")
+    p_port.add_argument("--save", action="store_true", help="结果写入数据库（生成报告需要）")
+    p_port.add_argument("--json", action="store_true", help="以 JSON 输出")
+    p_port.add_argument("-o", "--output", help="结果写入文件")
+    p_port.set_defaults(func=cmd_portscan)
+
+    # --- report
+    p_report = subparsers.add_parser("report", help="生成攻击面报告（从数据库汇总）")
+    p_report.add_argument("target", help="目标标识，需与扫描时的 target 一致")
+    p_report.add_argument(
+        "-f",
+        "--format",
+        default="html",
+        choices=["html", "md", "markdown", "json"],
+        help="输出格式，默认 html",
+    )
+    p_report.add_argument("-o", "--output", help="输出文件路径；缺省打印到标准输出")
+    p_report.set_defaults(func=cmd_report)
 
     # --- init
     p_init = subparsers.add_parser("init", help="生成配置模板")
