@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASP · 攻击面测绘平台</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --line:#e5e7eb; --line-soft:#f0f1f4;
+  --text:#1f2328; --muted:#6b7280; --dim:#9ca3af;
+  --accent:#2563eb; --accent-soft:#eff6ff;
+  --crit:#b91c1c; --high:#dc2626; --med:#d97706; --low:#2563eb; --info:#6b7280;
+  --ok:#059669; --ok-soft:#ecfdf5;
+  --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+header.top{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+header.top .wrap{display:flex;align-items:center;gap:18px;height:56px}
+.brand{font-weight:600;font-size:16px;letter-spacing:-.01em;text-decoration:none;color:var(--text)}
+.brand span{color:var(--accent)}
+.brand small{font-weight:400;color:var(--dim);font-size:12px;margin-left:6px}
+.spacer{flex:1}
+.pill{font-size:12px;padding:3px 10px;border-radius:999px;background:var(--line-soft);color:var(--muted)}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.err{background:#fef2f2;color:var(--high)}
+input,select,button,textarea{font-family:inherit;font-size:14px}
+input,select{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+button{padding:8px 16px;border:1px solid var(--accent);background:var(--accent);color:#fff;
+  border-radius:8px;font-weight:500;cursor:pointer;transition:filter .12s}
+button:hover:not(:disabled){filter:brightness(.94)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:#fff;color:var(--muted);border-color:var(--line)}
+button.ghost:hover{background:var(--line-soft);color:var(--text);filter:none}
+h1{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:28px 0 4px}
+h2{font-size:16px;font-weight:600;margin:0 0 12px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:14px;margin:0 0 22px}
+.cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.card.tight{padding:14px 16px}
+.metric .label{font-size:12px;color:var(--muted);margin-bottom:6px}
+.metric .value{font-size:26px;font-weight:500;letter-spacing:-.02em;line-height:1.1}
+.metric .unit{font-size:13px;color:var(--dim);font-weight:400;margin-left:3px}
+section{margin-bottom:26px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line-soft)}
+th{color:var(--muted);font-weight:500;font-size:12px;background:#fafbfc;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tbody tr.clickable{cursor:pointer;transition:background .1s}
+tbody tr.clickable:hover{background:var(--accent-soft)}
+.mono{font-family:var(--mono);font-size:13px}
+.tbl-wrap{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.empty{color:var(--dim);font-size:14px;padding:22px;text-align:center}
+.tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.tab{padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:#fff;
+  color:var(--muted);cursor:pointer;font-size:14px}
+.tab.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:500}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.row label{font-size:13px;color:var(--muted);min-width:52px}
+.row input[type=text]{flex:1;min-width:180px;font-family:var(--mono)}
+.sev{display:inline-block;font-size:12px;padding:2px 9px;border-radius:6px;color:#fff;font-weight:500}
+.sev.critical{background:var(--crit)} .sev.high{background:var(--high)}
+.sev.medium{background:var(--med)} .sev.low{background:var(--low)} .sev.info{background:var(--info)}
+.bar{height:6px;background:var(--line-soft);border-radius:3px;overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:6px;background:var(--line-soft);color:var(--muted)}
+pre{background:#0f172a;color:#cbd5e1;padding:14px 16px;border-radius:10px;overflow:auto;
+  font-family:var(--mono);font-size:12.5px;line-height:1.55;margin:10px 0;max-height:340px}
+.vuln{border:1px solid var(--line);border-radius:10px;padding:13px 15px;margin-bottom:9px;background:#fff}
+.vuln .head{display:flex;align-items:center;gap:10px;margin-bottom:7px;flex-wrap:wrap}
+.vuln .head b{font-size:14px;font-weight:600}
+.vuln .meta{font-size:12px;color:var(--muted);margin-left:auto}
+.vuln .url{font-family:var(--mono);font-size:12px;color:#374151;word-break:break-all}
+.vuln .ev{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:#f9fafb;
+  padding:7px 9px;border-radius:6px;margin-top:6px;white-space:pre-wrap;word-break:break-all}
+.detail-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.detail-head h2{margin:0;font-family:var(--mono);font-size:16px}
+.toast{position:fixed;right:20px;bottom:20px;background:#111827;color:#fff;padding:12px 18px;
+  border-radius:10px;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;
+  transform:translateY(10px);transition:all .22s;pointer-events:none;max-width:420px;z-index:99}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.err{background:#991b1b}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);
+  border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+footer{color:var(--dim);font-size:12.5px;text-align:center;padding:30px 24px 44px;border-top:1px solid var(--line);margin-top:14px}
+.warnbar{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:9px 14px;
+  border-radius:9px;font-size:13px;margin-bottom:18px}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/">ASP<span>·</span><small>攻击面测绘平台</small></a>
+    <span class="spacer"></span>
+    <span class="pill" id="verPill">加载中…</span>
+    <span class="pill" id="authPill" hidden></span>
+    <input type="text" id="tokenInput" placeholder="API Token（如需）" style="width:190px;display:none">
+    <button class="ghost" id="tokenBtn">Token</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="warnbar">
+    本工具仅用于<strong>授权范围内</strong>的安全测试与自有资产测绘。使用者需自行确保合规。
+  </div>
+
+  <h1>攻击面总览</h1>
+  <p class="sub">数据来自本地数据库，由子域名收集、端口扫描与 PoC 验证三条链路汇总而成。</p>
+
+  <section>
+    <div class="cards" id="statCards">
+      <div class="card metric"><div class="label">目标</div><div class="value" id="s-targets">–</div></div>
+      <div class="card metric"><div class="label">扫描任务</div><div class="value" id="s-tasks">–</div></div>
+      <div class="card metric"><div class="label">资产</div><div class="value" id="s-assets">–</div></div>
+      <div class="card metric"><div class="label">开放端口</div><div class="value" id="s-ports">–</div></div>
+      <div class="card metric"><div class="label">识别组件</div><div class="value" id="s-components">–</div></div>
+      <div class="card metric"><div class="label">发现漏洞</div><div class="value" id="s-vulns">–</div></div>
+    </div>
+    <div class="card" id="sevCard" style="margin-top:12px" hidden>
+      <h2>严重级别分布</h2>
+      <div id="sevBars"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>发起扫描</h2>
+    <div class="tabs">
+      <div class="tab on" data-panel="subdomain">子域名收集</div>
+      <div class="tab" data-panel="portscan">端口扫描</div>
+      <div class="tab" data-panel="poc">漏洞验证</div>
+    </div>
+    <div class="card">
+      <div id="panel-subdomain">
+        <div class="row">
+          <label>目标</label>
+          <input type="text" id="sub-domain" placeholder="example.com">
+          <label>来源</label>
+          <select id="sub-sources">
+            <option value="">默认（配置）</option>
+            <option value="crtsh">仅证书透明日志</option>
+            <option value="brute">仅 DNS 爆破</option>
+            <option value="crtsh,brute">两者都要</option>
+          </select>
+          <button id="btn-subdomain">开始收集</button>
+        </div>
+      </div>
+      <div id="panel-portscan" hidden>
+        <div class="row">
+          <label>目标</label>
+          <input type="text" id="port-host" placeholder="127.0.0.1">
+          <label>端口</label>
+          <input type="text" id="port-ports" placeholder="top / all / 80,443 / 8000-8010" style="max-width:270px">
+          <button id="btn-portscan">开始扫描</button>
+        </div>
+      </div>
+      <div id="panel-poc" hidden>
+        <div class="row">
+          <label>目标</label>
+          <input type="text" id="poc-target" placeholder="http://127.0.0.1:8080">
+          <label>级别</label>
+          <select id="poc-sev">
+            <option value="">全部</option>
+            <option value="critical,high">仅高危以上</option>
+            <option value="critical,high,medium">中危以上</option>
+          </select>
+          <button id="btn-poc">开始验证</button>
+        </div>
+      </div>
+      <pre id="scanOut" hidden></pre>
+    </div>
+  </section>
+
+  <section id="detailSection" hidden>
+    <div class="detail-head">
+      <h2 id="detailTarget"></h2>
+      <button class="ghost" id="btnBack">返回列表</button>
+      <button class="ghost" id="btnReportMd">导出 Markdown</button>
+      <button class="ghost" id="btnReportHtml">导出 HTML</button>
+    </div>
+
+    <div class="cards" id="detailCards" style="margin-bottom:14px"></div>
+
+    <div id="detailVulns" hidden>
+      <h2>漏洞详情</h2>
+      <div id="vulnList"></div>
+    </div>
+
+    <div id="detailPorts" hidden>
+      <h2>开放端口与服务</h2>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th>主机</th><th>端口</th><th>服务</th><th>产品</th><th>版本</th><th>标题</th>
+      </tr></thead><tbody id="portRows"></tbody></table></div>
+    </div>
+
+    <div id="detailComponents" hidden>
+      <h2>识别到的组件</h2>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th>组件</th><th>版本</th><th>类别</th><th style="width:180px">置信度</th>
+      </tr></thead><tbody id="componentRows"></tbody></table></div>
+    </div>
+
+    <div id="detailAssets" hidden>
+      <h2>资产清单</h2>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th>资产</th><th>类型</th><th>解析 IP</th><th>来源</th>
+      </tr></thead><tbody id="assetRows"></tbody></table></div>
+    </div>
+  </section>
+
+  <section id="targetsSection">
+    <h2>已测绘目标</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>目标</th><th>资产数</th><th>漏洞</th><th>任务数</th><th>最近扫描</th>
+        </tr></thead>
+        <tbody id="targetRows"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<footer>
+  ASP · 外网攻击面自动化测绘与漏洞验证平台 · 仅用于授权测试
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const SEV_ORDER = ['critical','high','medium','low','info'];
+const SEV_CN = {critical:'严重',high:'高危',medium:'中危',low:'低危',info:'信息'};
+const SEV_COLOR = {critical:'#b91c1c',high:'#dc2626',medium:'#d97706',low:'#2563eb',info:'#6b7280'};
+
+let TOKEN = localStorage.getItem('asp_token') || '';
+
+/* Token 会随每个请求带上（若服务端未启用鉴权则被忽略） */
+function headers(extra){
+  const h = Object.assign({'Content-Type':'application/json'}, extra||{});
+  if (TOKEN) h['X-API-Token'] = TOKEN;
+  return h;
+}
+
+async function api(path, options){
+  const res = await fetch(path, options);
+  if (!res.ok){
+    let detail = 'HTTP ' + res.status;
+    try { const j = await res.json(); detail = j.detail || detail; } catch(e){}
+    throw new Error(detail);
+  }
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('application/json') ? res.json() : res.text();
+}
+
+let toastTimer;
+function toast(msg, isError){
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isError ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, isError ? 6000 : 3200);
+}
+
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function metricCard(label, value, unit){
+  return `<div class="card metric"><div class="label">${esc(label)}</div>
+    <div class="value">${esc(value)}${unit ? `<span class="unit">${esc(unit)}</span>` : ''}</div></div>`;
+}
+
+/* ---------------------------------------------------------- 加载 */
+
+async function loadHealth(){
+  try {
+    const h = await api('/api/health');
+    $('verPill').textContent = 'v' + h.version;
+    $('verPill').className = 'pill ok';
+    if (h.auth_required){
+      const p = $('authPill');
+      p.textContent = TOKEN ? '已配置 Token' : '需要 Token';
+      p.className = 'pill' + (TOKEN ? ' ok' : ' err');
+      p.hidden = false;
+    }
+  } catch(e){
+    $('verPill').textContent = '连接失败';
+    $('verPill').className = 'pill err';
+    toast('无法连接后端：' + e.message, true);
+  }
+}
+
+async function loadStats(){
+  try {
+    const s = await api('/api/stats');
+    $('s-targets').textContent   = s.targets;
+    $('s-tasks').textContent     = s.tasks;
+    $('s-assets').textContent    = s.assets;
+    $('s-ports').textContent     = s.ports;
+    $('s-components').textContent= s.components;
+    $('s-vulns').textContent     = s.vulns;
+
+    const by = s.by_severity || {};
+    const total = Object.values(by).reduce((a,b)=>a+b, 0);
+    if (total > 0){
+      $('sevCard').hidden = false;
+      $('sevBars').innerHTML = SEV_ORDER.filter(k => by[k]).map(k => {
+        const pct = (by[k] / total * 100).toFixed(1);
+        return `<div style="margin-bottom:9px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="color:${SEV_COLOR[k]};font-weight:500">${SEV_CN[k]}</span>
+            <span style="color:#6b7280">${by[k]} 条 · ${pct}%</span>
+          </div>
+          <div class="bar"><i style="width:${pct}%;background:${SEV_COLOR[k]}"></i></div>
+        </div>`;
+      }).join('');
+    } else {
+      $('sevCard').hidden = true;
+    }
+  } catch(e){
+    toast('统计加载失败：' + e.message, true);
+  }
+}
+
+async function loadTargets(){
+  try {
+    const data = await api('/api/targets');
+    const rows = data.targets || [];
+    if (!rows.length){
+      $('targetRows').innerHTML =
+        '<tr><td colspan="5" class="empty">还没有测绘记录。用上面的表单跑一次扫描，或用命令行 <code>asp portscan … --save</code>。</td></tr>';
+      return;
+    }
+    $('targetRows').innerHTML = rows.map(t => {
+      const badges = SEV_ORDER.filter(k => t.vulns && t.vulns[k])
+        .map(k => `<span class="sev ${k}" style="margin-right:4px">${SEV_CN[k]} ${t.vulns[k]}</span>`)
+        .join('') || '<span style="color:#9ca3af">—</span>';
+      return `<tr class="clickable" data-target="${esc(t.target)}">
+        <td class="mono">${esc(t.target)}</td>
+        <td>${t.asset_count}</td>
+        <td>${badges}</td>
+        <td>${t.task_count}</td>
+        <td style="color:#6b7280;font-size:13px">${esc(t.last_scan)}</td>
+      </tr>`;
+    }).join('');
+    $('targetRows').querySelectorAll('tr[data-target]').forEach(tr => {
+      tr.onclick = () => showDetail(tr.dataset.target);
+    });
+  } catch(e){
+    toast('目标列表加载失败：' + e.message, true);
+  }
+}
+
+/* ---------------------------------------------------------- 详情 */
+
+async function showDetail(target){
+  try {
+    const d = await api('/api/targets/' + encodeURIComponent(target));
+    $('targetsSection').hidden = true;
+    $('detailSection').hidden = false;
+    $('detailTarget').textContent = d.target;
+    $('detailSection').dataset.target = target;
+
+    const st = d.stats || {};
+    $('detailCards').innerHTML =
+      metricCard('资产', st.asset_count || 0) +
+      metricCard('开放端口', st.open_port_count || 0) +
+      metricCard('识别组件', st.component_count || 0) +
+      metricCard('漏洞', st.vuln_count || 0) +
+      metricCard('扫描耗时', d.duration != null ? d.duration : '–', d.duration != null ? ' 秒' : '');
+
+    // 漏洞
+    const vulns = d.vulns || [];
+    $('detailVulns').hidden = !vulns.length;
+    $('vulnList').innerHTML = vulns.map(v => `
+      <div class="vuln">
+        <div class="head">
+          <span class="sev ${esc(v.severity)}">${SEV_CN[v.severity] || esc(v.severity)}</span>
+          <b>${esc(v.name)}</b>
+          <span class="meta">${esc(v.poc_id)} · 置信度 ${v.confidence}${v.verified ? ' · 已对照验证' : ''}</span>
+        </div>
+        <div class="url">${esc(v.target)}</div>
+        ${v.evidence ? `<div class="ev">${esc(v.evidence)}</div>` : ''}
+      </div>`).join('');
+
+    // 端口
+    const ports = d.ports || [];
+    $('detailPorts').hidden = !ports.length;
+    $('portRows').innerHTML = ports.map(p => `<tr>
+      <td class="mono">${esc(p.host)}</td>
+      <td class="mono">${p.number}/${esc(p.protocol)}</td>
+      <td>${esc(p.service) || '—'}</td>
+      <td>${esc(p.product) || '—'}</td>
+      <td>${esc(p.version) || '—'}</td>
+      <td style="color:#6b7280">${esc((p.title || '—').slice(0, 46))}</td>
+    </tr>`).join('');
+
+    // 组件
+    const comps = d.components || [];
+    $('detailComponents').hidden = !comps.length;
+    $('componentRows').innerHTML = comps.map(c => `<tr>
+      <td>${esc(c.name)}</td>
+      <td>${esc(c.version) || '—'}</td>
+      <td>${esc(c.category) || '—'}</td>
+      <td><div style="display:flex;align-items:center;gap:9px">
+        <div class="bar"><i style="width:${(c.confidence*100).toFixed(0)}%"></i></div>
+        <span style="font-size:12px;color:#6b7280;min-width:28px">${c.confidence}</span>
+      </div></td>
+    </tr>`).join('');
+
+    // 资产
+    const assets = d.assets || [];
+    $('detailAssets').hidden = !assets.length;
+    $('assetRows').innerHTML = assets.slice(0, 300).map(a => `<tr>
+      <td class="mono">${esc(a.value)}</td>
+      <td>${esc(a.type)}</td>
+      <td class="mono">${esc(a.resolved_ip) || '—'}</td>
+      <td style="color:#6b7280">${esc(a.source) || '—'}</td>
+    </tr>`).join('');
+
+    window.scrollTo({top:0, behavior:'smooth'});
+  } catch(e){
+    toast('详情加载失败：' + e.message, true);
+  }
+}
+
+function backToList(){
+  $('detailSection').hidden = true;
+  $('targetsSection').hidden = false;
+  loadTargets();
+  loadStats();
+}
+
+/* ---------------------------------------------------------- 扫描 */
+
+function setBusy(btn, busy, text){
+  btn.disabled = busy;
+  if (busy){
+    btn.dataset.orig = btn.textContent;
+    btn.innerHTML = '<span class="spin"></span>' + text;
+  } else if (btn.dataset.orig){
+    btn.textContent = btn.dataset.orig;
+  }
+}
+
+async function runScan(btn, path, payload, busyText){
+  setBusy(btn, true, busyText);
+  const out = $('scanOut');
+  out.hidden = false;
+  out.textContent = '执行中…';
+  try {
+    const r = await api(path, {method:'POST', headers: headers(), body: JSON.stringify(payload)});
+    out.textContent = JSON.stringify({target: r.target, elapsed: r.elapsed, summary: r.summary}, null, 2);
+    toast(`完成：${r.target}（${r.elapsed}s）`);
+    loadTargets(); loadStats();
+  } catch(e){
+    out.textContent = '失败：' + e.message;
+    toast('扫描失败：' + e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+/* ---------------------------------------------------------- 事件绑定 */
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+    tab.classList.add('on');
+    ['subdomain','portscan','poc'].forEach(p => {
+      $('panel-' + p).hidden = (p !== tab.dataset.panel);
+    });
+    $('scanOut').hidden = true;
+  };
+});
+
+$('btn-subdomain').onclick = () => {
+  const domain = $('sub-domain').value.trim();
+  if (!domain) return toast('请填写域名', true);
+  const src = $('sub-sources').value;
+  runScan($('btn-subdomain'), '/api/scan/subdomain',
+    {domain, sources: src ? src.split(',') : null, save: true}, '收集中');
+};
+
+$('btn-portscan').onclick = () => {
+  const host = $('port-host').value.trim();
+  if (!host) return toast('请填写主机', true);
+  runScan($('btn-portscan'), '/api/scan/portscan',
+    {host, ports: $('port-ports').value.trim() || null, save: true}, '扫描中');
+};
+
+$('btn-poc').onclick = () => {
+  const target = $('poc-target').value.trim();
+  if (!target) return toast('请填写目标', true);
+  const sev = $('poc-sev').value;
+  runScan($('btn-poc'), '/api/scan/poc',
+    {target, severity: sev ? sev.split(',') : null, save: true}, '验证中');
+};
+
+$('btnBack').onclick = backToList;
+
+$('btnReportMd').onclick = () => {
+  const t = $('detailSection').dataset.target;
+  downloadReport(t, 'markdown');
+};
+$('btnReportHtml').onclick = () => {
+  const t = $('detailSection').dataset.target;
+  downloadReport(t, 'html');
+};
+
+function downloadReport(target, format){
+  const url = `/api/targets/${encodeURIComponent(target)}/report?format=${format}`;
+  // 报告端点用 GET 下载，带 token 用 fetch 再落盘（避免 header 丢失）
+  fetch(url, {headers: headers()})
+    .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(text => {
+      const ext = format === 'html' ? 'html' : 'md';
+      const blob = new Blob([text], {type: format === 'html' ? 'text/html' : 'text/markdown'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `report-${target.replace(/[^\w.-]/g,'_')}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('报告已导出');
+    })
+    .catch(e => toast('导出失败：' + e.message, true));
+}
+
+$('tokenBtn').onclick = () => {
+  const box = $('tokenInput');
+  box.style.display = box.style.display === 'none' ? 'inline-block' : 'none';
+  if (box.style.display === 'inline-block'){ box.value = TOKEN; box.focus(); }
+};
+$('tokenInput').onchange = (e) => {
+  TOKEN = e.target.value.trim();
+  localStorage.setItem('asp_token', TOKEN);
+  toast(TOKEN ? 'Token 已保存到本地' : 'Token 已清空');
+  loadHealth();
+};
+
+/* ---------------------------------------------------------- 初始化 */
+
+loadHealth();
+loadStats();
+loadTargets();
+</script>
+</body>
+</html>

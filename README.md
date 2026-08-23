@@ -5,7 +5,7 @@
 
 ```
 Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML PoC 引擎
-196 个单元测试 · ruff 零告警 · 零网络依赖的单测 · Docker Compose 一键启动
+259 个单元测试 · ruff 零告警 · 零网络依赖的单测 · Web 看板 + REST 接口
 ```
 
 ---
@@ -36,6 +36,8 @@ Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML Po
 | **端口扫描与服务识别** | asyncio TCP 连接扫描 + 两阶段 banner 抓取（先静默读，未果再按端口类型主动探测） |
 | **Web 指纹识别** | favicon mmh3 哈希（纯 Python 实现，与官方库逐字节一致）+ 46 条内置规则 + 置信度累加 |
 | **报告导出** | JSON / Markdown / HTML 三种格式，**跨任务聚合**（同一目标的多条扫描链路汇总成一份） |
+| **Web 看板与 REST 接口** | FastAPI + 单页看板（**可选依赖**）：触发扫描、浏览结果、导出报告，含 token 鉴权与绑定安全检查 |
+| **LLM 辅助告警降噪** | 可插拔 provider（OpenAI 兼容接口 / 无 key 时启发式降级），在**标注样本上可量化评估**效果 |
 | **六表资产模型** | domain/IP/port/service/component/vuln 关联建模，支持按维度聚合 |
 | **资产变更 diff** | 对比两次扫描，输出新增/消失/未变资产 |
 | **结构化日志** | `key=value` 格式，可接 ELK / Loki |
@@ -85,6 +87,14 @@ python -m asp.cli portscan 127.0.0.1 --ports 1-1024 --save
 # 生成报告（从数据库聚合该目标的全部扫描结果）
 python -m asp.cli report 127.0.0.1 -f html -o report.html
 python -m asp.cli report example.com -f md
+
+# LLM 辅助告警降噪（无 API key 时自动降级为启发式规则）
+python -m asp.cli triage 127.0.0.1
+python -m asp.cli triage --self-test          # 在标注样本上评估研判效果
+
+# 启动 Web 看板与 REST 接口（需要先装可选依赖）
+pip install -e ".[api]"
+python -m asp.cli serve                       # http://127.0.0.1:8000
 
 # 生成配置模板
 python -m asp.cli init
@@ -330,6 +340,10 @@ attack-surface/
 │   ├── exceptions.py           # 统一异常树（可重试 / 不可重试）
 │   ├── logger.py               # 结构化日志
 │   ├── report.py               # 报告生成（JSON / Markdown / HTML，跨任务聚合）
+│   ├── llm.py                  # LLM 辅助告警降噪（可插拔 provider + 启发式降级）
+│   ├── api/                    # Web 看板与 REST 接口（可选依赖）
+│   │   ├── app.py              # FastAPI 应用（含绑定安全检查与 token 鉴权）
+│   │   └── static/index.html   # 单页看板前端
 │   ├── core/
 │   │   ├── http.py             # 异步 HTTP 客户端（限速/并发/重试）
 │   │   └── database.py         # 六表资产模型
@@ -351,7 +365,7 @@ attack-surface/
 │   │   └── fingerprints.yaml   # 46 条 Web 指纹规则
 │   └── pocs/                   # 内置检测插件
 ├── conf/config.example.yaml
-├── tests/                      # 196 个单元测试（全部离线）
+├── tests/                      # 259 个单元测试（全部离线）
 ├── .github/workflows/ci.yml
 ├── pyproject.toml
 └── requirements.txt
@@ -364,7 +378,7 @@ attack-surface/
 ```bash
 pip install -r requirements-dev.txt
 
-pytest -v            # 196 个用例
+pytest -v            # 259 个用例
 ruff check asp tests # 静态检查
 ```
 
@@ -416,12 +430,14 @@ high    sql-injection-error-based   .../sqli/medium.php?id=1%27                 
 - [x] 六表资产模型 + 资产变更 diff
 - [x] YAML PoC 引擎（4 种匹配器 + 提取器 + 白名单 DSL）
 - [x] 负向对照校验
-- [x] 196 个离线单元测试 + GitHub Actions CI
+- [x] 259 个离线单元测试 + GitHub Actions CI
 - [x] 端口扫描与服务识别（asyncio 连接扫描 + 两阶段 banner 抓取）
 - [x] Web 指纹识别（纯 Python MurmurHash3 + 46 条规则 + 置信度累加）
 - [x] 报告导出（HTML / Markdown / JSON，跨任务聚合）
-- [ ] FastAPI REST 接口 + Vue3 可视化看板
-- [ ] LLM 辅助告警降噪（对疑似结果做语义研判，量化误报率下降幅度）
+- [x] FastAPI REST 接口 + 单页 Web 看板（可选依赖，含鉴权与绑定安全检查）
+- [x] LLM 辅助告警降噪（可插拔 provider + 标注样本量化评估）
+- [ ] 分布式扫描（多节点协同 + 任务队列）
+- [ ] 更多协议支持（SMB / RDP 等内网协议探测）
 
 ---
 

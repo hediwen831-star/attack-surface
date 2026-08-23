@@ -453,6 +453,171 @@ def cmd_report(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def _load_findings(config: Config, target: str) -> list:
+    """从数据库读取某个目标的漏洞记录。"""
+    from sqlalchemy import select
+
+    from .core.database import ScanTask, Vuln, create_db_engine, init_db, session_scope
+
+    engine = create_db_engine(config.database)
+    init_db(engine)
+
+    with session_scope(engine) as session:
+        task_ids = session.execute(
+            select(ScanTask.id).where(ScanTask.target == target)
+        ).scalars().all()
+        if not task_ids:
+            return []
+        return list(
+            session.execute(
+                select(Vuln).where(Vuln.task_id.in_(task_ids)).order_by(Vuln.severity)
+            ).scalars().all()
+        )
+
+
+def cmd_triage(args: argparse.Namespace, config: Config) -> int:
+    """``asp triage`` —— LLM 辅助告警降噪。"""
+    from .llm import (
+        VERDICT_FALSE_POSITIVE,
+        VERDICT_UNCERTAIN,
+        Finding,
+        build_provider,
+        evaluate,
+    )
+
+    provider = build_provider(
+        args.provider or config.llm.provider,
+        base_url=config.llm.base_url,
+        model=config.llm.model,
+        api_key=config.llm.api_key,
+    )
+
+    # ---- 模式一：在标注样本上评估效果（量化）----
+    if args.self_test:
+        result = asyncio.run(evaluate(provider))
+
+        if args.json:
+            print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+            return 0
+
+        print()
+        print("=" * 74)
+        print("  研判效果评估（内置标注样本）")
+        print(f"  提供方: {result.provider}")
+        print("=" * 74)
+        print()
+        print(f"{'样本':<38}{'期望':<10}{'实际':<10}")
+        print("-" * 74)
+        for poc_id, expected, actual in result.details:
+            mark = " " if expected == actual else "≠"
+            print(f"{poc_id[:36]:<38}{expected:<10}{actual:<10}{mark}")
+        print("-" * 74)
+        print()
+        print(f"  准确率      {result.accuracy:.1%}   （不确定计为错误，保守计算）")
+        print(f"  有效覆盖率  {result.coverage:.1%}   （1 - 不确定率）")
+        print(f"  误报召回率  {result.fp_recall:.1%}   （真正的误报被识别出的比例）")
+        print(f"  误报识别    {result.false_positives_caught}/{result.false_positives_total}")
+        print(f"  真阳性识别  {result.true_positives_caught}/{result.true_positives_total}")
+        print()
+        if result.provider == "heuristic":
+            print("  提示：当前是启发式降级模式，只能识别错误页这类明显误报。")
+            print("        设置 ASP_LLM_API_KEY 后重跑，可以看到语义层面的判断差异。")
+            print()
+        return 0
+
+    # ---- 模式二：对真实发现做研判 ----
+    if not args.target:
+        print("请指定目标：asp triage <target>，或用 --self-test 跑内置评估。", file=sys.stderr)
+        return 2
+
+    vulns = _load_findings(config, args.target)
+    if not vulns:
+        print(f"目标 {args.target} 在数据库中没有漏洞记录。")
+        print("提示：先跑一次 `asp poc run <target> --save`。")
+        return 1
+
+    if len(vulns) > config.llm.max_findings:
+        logger.warning(
+            "triage_truncated total=%d limit=%d", len(vulns), config.llm.max_findings
+        )
+        vulns = vulns[: config.llm.max_findings]
+
+    findings = [Finding.from_vuln(v) for v in vulns]
+    verdicts = asyncio.run(provider.judge_many(findings))
+
+    fp_count = sum(1 for v in verdicts if v.verdict == VERDICT_FALSE_POSITIVE)
+    uncertain_count = sum(1 for v in verdicts if v.verdict == VERDICT_UNCERTAIN)
+    kept = len(verdicts) - fp_count
+
+    if args.json:
+        payload = {
+            "target": args.target,
+            "provider": provider.name,
+            "total": len(findings),
+            "false_positive": fp_count,
+            "uncertain": uncertain_count,
+            "remaining": kept,
+            "items": [
+                {
+                    "poc_id": f.poc_id,
+                    "name": f.name,
+                    "severity": f.severity,
+                    "target": f.target,
+                    **v.to_dict(),
+                }
+                for f, v in zip(findings, verdicts, strict=False)
+            ],
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print()
+    print("=" * 78)
+    print("  告警降噪研判")
+    print(f"  目标: {args.target}     提供方: {provider.name}")
+    print("=" * 78)
+    print()
+
+    for finding, verdict in zip(findings, verdicts, strict=False):
+        label = {
+            "true_positive": "[真阳性]",
+            "false_positive": "[ 误报 ]",
+            "uncertain": "[待复核]",
+        }[verdict.verdict]
+        print(f"{label} {finding.poc_id}  ({finding.severity})")
+        print(f"          {finding.target[:96]}")
+        if verdict.reason:
+            print(f"          依据: {verdict.reason}")
+        if verdict.confidence:
+            print(f"          置信度: {verdict.confidence:.2f}")
+        print()
+
+    print("-" * 78)
+    print(f"  研判前        {len(findings)} 条")
+    print(f"  判为误报      {fp_count} 条（{fp_count / len(findings):.1%}）")
+    print(f"  需人工复核    {uncertain_count} 条")
+    print(f"  研判后剩余    {kept} 条")
+    print("-" * 78)
+    print()
+    print("  注意：研判结果只做标注，不会删除任何原始记录 ——")
+    print("        LLM 会犯错，直接删掉真漏洞的代价远大于多留几条待复核项。")
+    print()
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace, config: Config) -> int:
+    """``asp serve`` —— 启动 Web 看板与 REST 接口。"""
+    # 延迟导入：Web 依赖是可选的，没装也不该影响其他命令
+    try:
+        from .api.app import serve
+    except ImportError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    serve(config, host=args.host, port=args.port)
+    return 0
+
+
 def cmd_init(args: argparse.Namespace, config: Config) -> int:
     """``asp init`` —— 生成一份配置模板。"""
     target = Path(args.path or "config.yaml")
@@ -512,6 +677,10 @@ def build_parser() -> argparse.ArgumentParser:
   asp portscan 127.0.0.1 --ports 1-1024 --save   指定范围并落库
   asp report 127.0.0.1 -f html -o report.html    生成 HTML 报告
   asp report example.com -f md                   生成 Markdown 报告
+  asp triage 127.0.0.1                            LLM 辅助降噪（无 key 时启发式降级）
+  asp triage --self-test                          在标注样本上评估研判效果
+  asp serve                                      启动 Web 看板（需要 pip install -e ".[api]"）
+  asp serve --host 0.0.0.0 --port 8088           远程访问（必须设置 ASP_API_TOKEN）
   asp init                                       生成配置模板
 
 免责声明：本工具仅用于授权范围内的安全测试与自有资产测绘。
@@ -591,6 +760,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_report.add_argument("-o", "--output", help="输出文件路径；缺省打印到标准输出")
     p_report.set_defaults(func=cmd_report)
+
+    # --- triage
+    p_triage = subparsers.add_parser(
+        "triage", help="LLM 辅助告警降噪（研判哪些命中是误报）"
+    )
+    p_triage.add_argument("target", nargs="?", help="目标标识；配合 --self-test 时可不填")
+    p_triage.add_argument(
+        "--provider",
+        choices=["auto", "heuristic", "openai"],
+        help="研判提供方；缺省用配置值（auto 会在有 API key 时启用 LLM）",
+    )
+    p_triage.add_argument(
+        "--self-test", action="store_true", help="在内置标注样本上评估研判效果（量化准确率）"
+    )
+    p_triage.add_argument("--json", action="store_true", help="以 JSON 输出")
+    p_triage.set_defaults(func=cmd_triage)
+
+    # --- serve
+    p_serve = subparsers.add_parser("serve", help="启动 Web 看板与 REST 接口")
+    p_serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="绑定地址。非回环地址必须设置 ASP_API_TOKEN，否则拒绝启动",
+    )
+    p_serve.add_argument("--port", type=int, default=8000, help="监听端口，默认 8000")
+    p_serve.set_defaults(func=cmd_serve)
 
     # --- init
     p_init = subparsers.add_parser("init", help="生成配置模板")

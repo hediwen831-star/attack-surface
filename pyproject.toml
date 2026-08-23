@@ -27,7 +27,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
+# Web API 与可视化看板 —— 刻意做成可选依赖。
+#
+# 核心能力（子域名 / 端口 / 指纹 / PoC 引擎）只需要 3 个运行时依赖；
+# 不该因为「想看个界面」就被迫装上 FastAPI + uvicorn 这一整套。
+# 装法：pip install -e ".[api]"，然后 asp serve
+api = [
+  "fastapi>=0.110,<1.0",
+  "uvicorn[standard]>=0.27,<1.0",
+]
+
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.5",
+  "mmh3>=4.0",
+  "fastapi>=0.110,<1.0",
+  "uvicorn[standard]>=0.27,<1.0",
+  "httpx>=0.27,<1.0",
+]
 
 [project.scripts]
 asp = "asp.cli:main"
@@ -37,10 +55,10 @@ Homepage = "https://github.com/yourname/attack-surface-platform"
 Issues = "https://github.com/yourname/attack-surface-platform/issues"
 
 [tool.setuptools]
-packages = ["asp", "asp.core", "asp.discover", "asp.plugins", "asp.services"]
+packages = ["asp", "asp.core", "asp.discover", "asp.plugins", "asp.services", "asp.api"]
 
 [tool.setuptools.package-data]
-asp = ["pocs/*.yaml"]
+asp = ["pocs/*.yaml", "rules/*.yaml", "api/static/*.html"]
 
 # ---------------------------------------------------------------- 工具配置
 
