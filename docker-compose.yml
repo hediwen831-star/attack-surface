@@ -1,0 +1,77 @@
+# ASP — 容器化运行方案
+#
+# 默认情况下 ASP 不需要 Docker：本机有 Python 3.11+ 就能直接跑。
+# 这个 compose 文件解决两件事：
+#   ① 本机没配好 Python 环境时也能跑
+#   ② Web 看板需要常驻服务，用容器管理比手动后台进程干净
+#
+# ══════════════════════════════════════════════════════════════════
+# 用法
+# ══════════════════════════════════════════════════════════════════
+#
+#   # 构建
+#   docker compose build
+#
+#   # 跑一次扫描（一次性容器，跑完即删）
+#   docker compose run --rm asp subdomain example.com --save
+#   docker compose run --rm asp portscan 127.0.0.1 --save
+#   docker compose run --rm asp report 127.0.0.1 -f html -o /app/out/report.html
+#
+#   # 起 Web 看板（常驻）
+#   export ASP_API_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+#   docker compose up dashboard
+#   # → http://127.0.0.1:8000
+
+services:
+  # ── 命令行入口（一次性容器）──────────────────────────────────
+  #
+  # 用 `docker compose run --rm asp <子命令>` 调用。
+  # 不要用 `docker compose up asp` —— CLI 工具跑完就该退出，
+  # 常驻在那儿只会让人以为它还在干活。
+  asp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: asp:latest
+    volumes:
+      # 数据库持久化到宿主，容器删了资产数据还在
+      - ./data:/app/data
+      # 配置只读挂载 —— 容器不该改宿主的配置文件
+      - ./conf:/app/conf:ro
+      # 报告输出目录
+      - ./out:/app/out
+    environment:
+      ASP_DATABASE: /app/data/asp.db
+    # 刻意不设 restart：一次性任务失败就该失败，
+    # 不该被反复重启掩盖掉真正的错误
+    profiles: ["cli"]
+
+  # ── Web 看板（常驻服务）──────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: asp:latest
+    command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - ./data:/app/data
+      - ./conf:/app/conf:ro
+      - ./out:/app/out
+    environment:
+      ASP_DATABASE: /app/data/asp.db
+
+      # ⚠️ 必填，不设就直接拒绝启动
+      #
+      # 容器内必须绑 0.0.0.0（否则宿主访问不到），而 asp/api/app.py 的
+      # 绑定安全检查规定：绑非回环地址必须提供 token。
+      #
+      # 这里用 `${VAR:?提示}` 语法强制要求你先设置 —— compose 会在变量缺失时
+      # 直接报错退出，而不是"给个默认弱口令"或"跳过检查"。
+      # 后两种做法都会让安全检查形同虚设。
+      ASP_API_TOKEN: ${ASP_API_TOKEN:?请先设置 ASP_API_TOKEN。生成方式：python -c "import secrets; print(secrets.token_urlsafe(32))"}
+    ports:
+      # 只映射到宿主回环。
+      # 哪怕容器内监听 0.0.0.0，宿主上也只绑 127.0.0.1 ——
+      # 局域网内其他机器访问不到，这是最后一道边界。
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
