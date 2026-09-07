@@ -1,0 +1,75 @@
+name: Bug 报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量填完整 —— 尤其是**复现步骤**和**原始输出**，
+        这两项基本决定了问题能否被定位。
+
+        > ⚠️ **安全漏洞请走 [SECURITY.md](../blob/main/SECURITY.md) 里的私下渠道，不要开公开 issue。**
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交
+      description: 你用的是哪个提交？执行 `git rev-parse --short HEAD` 获取
+      placeholder: "例如：daf5c5a"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: |
+        操作系统、Python 版本、安装方式。
+        **Windows 上很多问题与平台相关**（比如 favicon 哈希、命令输出编码），
+        所以这一项请务必写清楚。
+      value: |
+        - 操作系统：
+        - Python 版本：
+        - 安装方式（pip / docker / 源码）：
+        - 是否启用了 Web 接口：
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 具体到可以直接照着敲的命令
+      placeholder: |
+        1. 执行 `python -m asp.cli portscan 127.0.0.1 --save`
+        2. 观察到 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: "**请粘贴原始输出**，不要只写「报错了」—— 错误信息本身往往就是线索"
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 详细日志（可选）
+      description: |
+        设置 `ASP_LOG_LEVEL=DEBUG` 后重跑能拿到更详细的信息。
+        涉及扫描结果的问题，附上 `--json` 的输出会很有帮助。
+      render: shell
+    validations:
+      required: false

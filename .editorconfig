@@ -1,0 +1,36 @@
+# EditorConfig —— 统一不同编辑器/IDE 的缩进与换行风格
+# https://editorconfig.org
+#
+# 为什么这个项目需要它：
+# 仓库跨 Python / PHP / Java / YAML / Markdown 多种语言，缩进要求各不相同。
+# 没有统一配置时，不同编辑器会各自按自己的默认值处理，
+# 一次保存就产生大量与内容无关的 diff —— 代码评审时全是噪声。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# YAML 对缩进敏感且惯例是 2 空格
+[*.{yaml,yml,json}]
+indent_size = 2
+
+[*.md]
+# Markdown 里「行尾两个空格」是硬换行语法，不能自动删掉
+trim_trailing_whitespace = false
+
+[*.{sh,bash}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+# Windows 批处理必须用 CRLF —— 部分 cmd 解析器对 LF 会出错。
+# 注意 .gitattributes 里有对应规则，两处要一致。
+[*.{bat,cmd}]
+end_of_line = crlf
