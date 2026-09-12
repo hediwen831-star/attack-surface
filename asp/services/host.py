@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -83,13 +83,30 @@ class HostReport:
 
     @property
     def all_components(self) -> list[ComponentResult]:
-        """所有端口上识别出的组件（去重合并）。"""
+        """所有端口上识别出的组件（去重合并）。
+
+        ⚠️ **必须返回新对象，不能原地修改 self.components 里的 ComponentResult。**
+
+        踩过的坑：最初写的是 `existing.confidence += item.confidence`，
+        直接改了原始对象 —— 于是**每调用一次这个方法，置信度就再累加一次**：
+
+            第 1 次读 → 0.60（正确）
+            第 2 次读 → 0.90
+            第 3 次读 → 1.00
+
+        后果是同一份报告被读取多次（比如「生成日志」和「写数据库」各读一次）
+        会得到不同的数值，而且越读越离谱。
+
+        **property 应该无副作用** —— 这是它和方法最本质的区别。
+        带累加语义的聚合逻辑如果要暴露成属性，就必须先复制再合并。
+        """
         merged: dict[str, ComponentResult] = {}
         for items in self.components.values():
             for item in items:
                 existing = merged.get(item.name)
                 if existing is None:
-                    merged[item.name] = item
+                    # 复制一份，避免后续的累加写回原始对象
+                    merged[item.name] = replace(item, evidence=list(item.evidence))
                 else:
                     existing.confidence = min(1.0, existing.confidence + item.confidence)
                     existing.evidence.extend(
