@@ -40,6 +40,16 @@ Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML Po
 
 ---
 
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | **技术栈详解、架构分层、核心算法原理、与现有方案的对比** |
+| [docs/FAQ.md](docs/FAQ.md) | 设计追问与回答要点（20+ 个高频问题，含"不要说什么"） |
+| 本 README | 项目概览、快速开始、PoC 编写指南 |
+
+---
+
 ## 快速开始
 
 ```bash
