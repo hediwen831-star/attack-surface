@@ -1,0 +1,55 @@
+id: phpinfo-page-exposure
+
+info:
+  name: phpinfo() 调试页面暴露
+  severity: medium
+  author: hediwen
+  tags: [php, phpinfo, exposure, misconfiguration]
+  description: |
+    站点遗留 phpinfo() 测试页面。phpinfo 会输出完整的 PHP 配置、
+    已加载扩展、绝对路径、环境变量、以及部分服务器内部信息，
+    为后续攻击（路径推导、扩展相关漏洞利用、凭据搜集）提供关键情报。
+    属于典型的「配置遗留」问题 —— 修复成本极低但常被忽略。
+  reference:
+    - https://www.php.net/manual/en/function.phpinfo.php
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/phpinfo.php"
+      - "{{BaseURL}}/info.php"
+      - "{{BaseURL}}/test.php"
+      - "{{BaseURL}}/phpinfo"
+
+    matchers-condition: and
+
+    matchers:
+      - type: status
+        status: [200]
+
+      - type: word
+        part: body
+        words:
+          - "phpinfo()"
+          - "PHP Version"
+        condition: and
+
+      - type: regex
+        part: body
+        regex:
+          - "PHP Version\\s*=>?\\s*[\\d.]+"
+          - "System\\s*</td><td[^>]*>[^<]*"
+        condition: or
+
+    extractors:
+      - type: regex
+        part: body
+        name: php_version
+        regex:
+          - "PHP Version\\s*=>?\\s*([\\d.]+)"
+
+      - type: regex
+        part: body
+        name: system
+        regex:
+          - "<tr><td class=\"e\">System </td><td class=\"v\">([^<]*)"

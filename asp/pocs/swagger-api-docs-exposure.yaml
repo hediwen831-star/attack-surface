@@ -1,0 +1,64 @@
+id: swagger-api-docs-exposure
+
+info:
+  name: Swagger / OpenAPI 接口文档未授权暴露
+  severity: medium
+  author: hediwen
+  tags: [swagger, openapi, exposure]
+  description: |
+    接口文档未做访问控制。文档本身不算高危漏洞，但它是**攻击面放大器**：
+    它把「猜接口」变成「读接口」—— 攻击者据此拿到全部路由、参数名、
+    参数类型与鉴权方式，直接跳过信息收集阶段进入参数级测试。
+    实战中 Swagger 暴露往往是后续批量未授权访问/越权测试的起点。
+  reference:
+    - https://swagger.io/specification/
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/swagger-ui.html"
+      - "{{BaseURL}}/swagger-ui/index.html"
+      - "{{BaseURL}}/v2/api-docs"
+      - "{{BaseURL}}/v3/api-docs"
+      - "{{BaseURL}}/openapi.json"
+
+    # 用 and 而不是 or。
+    #
+    # 【实测踩坑记录】最初这一版用的是 `matchers-condition: or` + 关键字匹配，
+    # 结果在自研靶场上误报 3 次 —— 因为很多服务器的 404 页面会把请求路径回显，
+    # 而我们请求的路径里正好含 "swagger"，于是页面正文里就出现了 "swagger" 这个词。
+    #
+    # 这是注入/暴露类检测中最典型的误报模式：
+    # **检测特征被检测行为本身「制造」了出来。**
+    #
+    # 修复方式有两步：
+    #   ① 用 negative 反向匹配排掉错误页
+    #   ② 改用结构化特征（JSON 里的 "swagger": / "paths": {）而不是裸关键词
+    # 修完之后在靶场上误报归零。
+    matchers-condition: and
+
+    matchers:
+      # ① 反向匹配：错误页一律不算命中
+      - type: word
+        part: body
+        words:
+          - "404 Not Found"
+          - "was not found"
+          - "Cannot GET"
+          - "页面不存在"
+        condition: or
+        negative: true
+
+      - type: status
+        status: [200]
+
+      # ② 结构化特征：只有真的是接口文档才会有这些 JSON 键
+      - type: regex
+        part: body
+        regex:
+          - '"swagger"\s*:'
+          - '"openapi"\s*:'
+          - '"paths"\s*:\s*\{'
+          - 'swagger-ui-container'
+          - 'urls\.primaryName'
+        condition: or

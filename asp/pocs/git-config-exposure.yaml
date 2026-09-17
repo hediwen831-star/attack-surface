@@ -1,0 +1,49 @@
+id: git-config-exposure
+
+info:
+  name: Git 配置文件泄露
+  severity: high
+  author: hediwen
+  tags: [exposure, git, information-disclosure]
+  description: |
+    站点部署时未清理 .git 目录，可通过 HTTP 直接读取 .git/config。
+    攻击者据此可完整下载仓库对象，还原全部源码（含硬编码的密钥、
+    数据库凭据、内网地址），进而从「信息泄露」升级为「源码泄露」乃至「供应链攻击」。
+  reference:
+    - https://owasp.org/www-project-top-ten/
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+      - "{{BaseURL}}/.git/HEAD"
+
+    # 用 and 组合三个独立特征：
+    # 1) 状态 200
+    # 2) 正文含 git 配置的固定段落标记
+    # 3) 正文含仓库格式版本字段
+    # 三者同时成立，几乎不可能是巧合。
+    matchers-condition: and
+
+    matchers:
+      - type: status
+        status: [200]
+
+      - type: word
+        part: body
+        words:
+          - "[core]"
+          - "repositoryformatversion"
+        condition: and
+
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^\\s*(url|filemode|bare|logallrefupdates)\\s*="
+
+    extractors:
+      - type: regex
+        part: body
+        name: remote_url
+        regex:
+          - "(?m)^\\s*url\\s*=\\s*(.+)"

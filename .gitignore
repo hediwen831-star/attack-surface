@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+
+# 测试与覆盖率
+.pytest_cache/
+.pytest_tmp/
+.coverage
+htmlcov/
+
+# 工具缓存
+.ruff_cache/
+
+# 扫描产物（不要把扫描结果提交进仓库！）
+*.db
+*.db-wal
+*.db-shm
+out/
+output/
+results/
+*.json
+!conf/*.json
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+.DS_Store

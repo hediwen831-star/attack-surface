@@ -1,0 +1,70 @@
+# PoC 模板 —— 复制此文件开始编写你自己的检测插件。
+#
+# 命名规范：<组件>-<漏洞类型>.yaml，例如 tomcat-put-cve-2017-12615.yaml
+# 文件名以 "_" 开头的文件不会被加载，所以本文件既是模板也不会被执行。
+
+id: template-example
+
+info:
+  name: PoC 模板示例
+  severity: info          # critical / high / medium / low / info
+  author: your-name
+  tags: [template, example]
+  description: |
+    一句话说明这个漏洞是什么、影响范围是什么。
+    多行描述会原样出现在报告里。
+  reference:
+    - https://example.com/advisory
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/vulnerable/path"
+
+    # 可选：自定义请求头
+    # headers:
+    #   X-Custom: value
+
+    # 多匹配器之间的关系：and（全部满足）/ or（任一满足）
+    # 强烈建议用 and —— 单一条件命中误报率极高。
+    matchers-condition: and
+
+    matchers:
+      - type: status
+        status: [200]
+
+      - type: word
+        part: body          # body / header / all
+        words:
+          - "特征字符串"
+        condition: and      # 多个词之间的关系：and / or
+        # negative: true    # 反向匹配：响应中「不包含」该词时命中
+        # case-insensitive: true
+
+      # 正则匹配（更适合匹配动态内容中的稳定结构）
+      # - type: regex
+      #   part: body
+      #   regex:
+      #     - "version\\s*[=:]\\s*([\\d.]+)"
+      #   condition: or
+
+      # DSL 匹配（白名单语法，表达能力最强）
+      # - type: dsl
+      #   dsl:
+      #     - "status == 200"
+      #     - "contains(body, 'uid=')"
+      #     - "len(body) > 1024"
+      #     - "regex(header, 'Server: .*nginx')"
+      #   condition: and
+
+    # 可选：提取器。把「存在漏洞」升级为「漏洞的具体内容」
+    # extractors:
+    #   - type: regex
+    #     part: body
+    #     name: version
+    #     regex:
+    #       - "version[=:]\\s*([\\d.]+)"
+    #   - type: kv
+    #     part: header
+    #     name: server
+    #     key: Server
