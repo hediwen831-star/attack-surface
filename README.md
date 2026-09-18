@@ -23,6 +23,55 @@ Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML Po
 
 ---
 
+## 架构总览
+
+```mermaid
+flowchart TB
+    subgraph S1["① 资产发现"]
+        A1["证书透明日志 crt.sh"]
+        A2["DNS 字典爆破<br/>+ 泛解析基线检测"]
+    end
+
+    subgraph S2["② 服务探测"]
+        B1["端口扫描<br/>两阶段 banner 抓取"]
+        B2["Web 指纹识别<br/>favicon mmh3 + 46 条规则"]
+    end
+
+    subgraph S3["③ 漏洞验证"]
+        C1["YAML PoC 加载与校验"]
+        C2["匹配器 / 提取器<br/>白名单 DSL，无 eval"]
+        C3["负向对照校验<br/>排除通配响应误报"]
+    end
+
+    subgraph S4["④ 降噪研判"]
+        D1["OpenAI 兼容 provider"]
+        D2["启发式降级<br/>无 API key 也可用"]
+    end
+
+    subgraph S5["⑤ 数据层"]
+        E1[("SQLite / PostgreSQL<br/>六表资产模型")]
+    end
+
+    subgraph S6["⑥ 输出"]
+        F1["报告<br/>JSON / Markdown / HTML"]
+        F2["Web 看板 + REST<br/>FastAPI（可选依赖）"]
+    end
+
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6
+    S5 -. "跨任务聚合 + 变更 diff" .-> F1
+```
+
+**一条设计主线贯穿全部六层：结论必须可追溯。**
+
+- 每个资产记录了**来源**（哪个源发现的）
+- 每个组件记录了**证据**和**置信度**（为什么认为它存在）
+- 每条漏洞记录了**命中片段**和**负向对照结果**（为什么不是误报）
+- 每次研判记录了**判断依据**（LLM 或启发式，以及它的理由）
+
+扫描器最容易被质疑的就是「你报的这个是真的吗」。可追溯性是对这个问题的正面回答。
+
+---
+
 ## 核心特性
 
 | 特性 | 说明 |
@@ -164,6 +213,56 @@ localhost.pan.baidu.com         127.0.0.1         crtsh
                                                     │            ─< Vuln      │
                                                     └─────────────────────────┘
 ```
+
+---
+
+## 容器化运行
+
+> ⚠️ **验证状态（如实说明）**
+>
+> `Dockerfile` 与 `docker-compose.yml` 已完成，并通过 `docker compose config`
+> 语法校验（含 `ASP_API_TOKEN` 强制检查的行为验证）。
+> **但开发机上的 Docker 守护进程无法启动**（`wsl.exe` 被安全策略拦截），
+> 所以**镜像未经实际构建验证**。
+>
+> 首次使用时如果遇到问题，欢迎提 issue —— 我会按真实反馈修正。
+
+本机已有 Python 3.11+ 的话**不需要 Docker**。容器化解决的是另外两件事：
+
+1. 本机没配好 Python 环境（或不想污染本机环境）
+2. Web 看板需要常驻服务，用容器管理比手动后台进程干净
+
+### 跑一次扫描
+
+```bash
+docker compose build
+
+# 一次性容器，跑完即删
+docker compose run --rm asp subdomain example.com --save
+docker compose run --rm asp portscan 127.0.0.1 --save
+docker compose run --rm asp poc run http://127.0.0.1:8080 --save
+docker compose run --rm asp report 127.0.0.1 -f html -o /app/out/report.html
+```
+
+数据库落在 `./data`，报告落在 `./out` —— 都由 compose 挂载到宿主，容器删了数据还在。
+
+### 起 Web 看板
+
+```bash
+# 必须先设置 token
+export ASP_API_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
+docker compose up dashboard
+# → http://127.0.0.1:8000
+```
+
+**为什么 token 是强制的**：容器内必须绑 `0.0.0.0` 才能被宿主访问，
+而绑定安全检查规定「绑非回环地址必须有 token」。
+compose 用 `${ASP_API_TOKEN:?...}` 实现 —— 没设就直接报错退出，
+而不是给个默认弱口令或跳过检查。后两种做法都会让安全检查形同虚设。
+
+端口映射写成 `127.0.0.1:8000:8000`：哪怕容器内监听 `0.0.0.0`，
+宿主上也只绑回环，局域网内其他机器访问不到。
 
 ---
 
