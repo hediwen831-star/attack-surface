@@ -114,12 +114,41 @@ class EngineConfig:
 
 
 @dataclass
+class LLMConfig:
+    """LLM 辅助告警降噪配置。
+
+    不配 API key 也能用（降级为启发式规则）；配了就启用语义研判。
+    key 建议用环境变量 ``ASP_LLM_API_KEY`` 提供，不要写进配置文件 ——
+    配置文件很容易被一起提交到仓库里。
+    """
+
+    provider: str = "auto"
+    """``auto`` / ``heuristic`` / ``openai``。auto 会在有 key 时用 LLM。"""
+
+    base_url: str = "https://api.openai.com/v1"
+    """OpenAI 兼容接口地址。DeepSeek / 通义 / Ollama 等改这里即可。"""
+
+    model: str = "gpt-4o-mini"
+    """模型名。"""
+
+    api_key: str = ""
+    """API key。留空则读环境变量 ASP_LLM_API_KEY。"""
+
+    timeout: float = 30.0
+    """单次请求超时（秒）。"""
+
+    max_findings: int = 100
+    """单次研判的最大条数 —— 防止误操作把几百条发现全送去打 API。"""
+
+
+@dataclass
 class Config:
     """顶层配置对象。"""
 
     http: HttpConfig = field(default_factory=HttpConfig)
     discover: DiscoverConfig = field(default_factory=DiscoverConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
     database: str = "asp.db"
     """SQLite 数据库路径。"""
 
@@ -167,6 +196,7 @@ class Config:
             "http": (HttpConfig, raw.get("http", {})),
             "discover": (DiscoverConfig, raw.get("discover", {})),
             "engine": (EngineConfig, raw.get("engine", {})),
+            "llm": (LLMConfig, raw.get("llm", {})),
         }
         kwargs: dict[str, Any] = {}
         for name, (klass, payload) in nested.items():
@@ -186,7 +216,7 @@ class Config:
 
         例：``ASP_DISCOVER_CONCURRENCY=300`` 覆盖 ``discover.concurrency``。
         """
-        for section_name in ("http", "discover", "engine"):
+        for section_name in ("http", "discover", "engine", "llm"):
             section = getattr(self, section_name)
             for f in fields(section):
                 env_key = f"{ENV_PREFIX}{section_name.upper()}_{f.name.upper()}"
@@ -195,7 +225,7 @@ class Config:
                 setattr(section, f.name, _coerce(os.environ[env_key], f.type))
 
         for f in fields(self):
-            if f.name in ("http", "discover", "engine"):
+            if f.name in ("http", "discover", "engine", "llm"):
                 continue
             env_key = f"{ENV_PREFIX}{f.name.upper()}"
             if env_key in os.environ:
@@ -223,6 +253,18 @@ class Config:
             raise ConfigError("http.timeout 必须 > 0", got=self.http.timeout)
         if self.http.retries < 0:
             raise ConfigError("http.retries 不能为负", got=self.http.retries)
+
+        valid_providers = {"auto", "heuristic", "openai"}
+        if self.llm.provider.strip().lower() not in valid_providers:
+            raise ConfigError(
+                "llm.provider 取值非法",
+                got=self.llm.provider,
+                allowed=sorted(valid_providers),
+            )
+        if self.llm.timeout <= 0:
+            raise ConfigError("llm.timeout 必须 > 0", got=self.llm.timeout)
+        if self.llm.max_findings < 1:
+            raise ConfigError("llm.max_findings 必须 >= 1", got=self.llm.max_findings)
 
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if self.log_level.upper() not in valid_levels:
