@@ -1,0 +1,364 @@
+# Web 指纹识别规则库
+#
+# 字段说明：
+#   name           组件名（同名规则的多条命中会【累加置信度】）
+#   category       cms / framework / middleware / language / javascript / cache / other
+#   confidence     本条规则的权重（0~1）。多条累加后达到 0.5 才会被输出
+#   headers        响应头正则
+#   body           正文正则
+#   cookies        Cookie 名正则（Cookie 名常直接暴露技术栈）
+#   version_regex  版本提取正则（第一个捕获组作为版本号）
+#
+# ── 编写技巧：为什么同一个组件要拆成多条规则 ──
+#
+# 单条规则内部的多个 pattern 是「任一命中即算命中」，只加一次置信度。
+# 想要表达「必须同时具备多个特征」这种更强判断，应该拆成多条同名规则 ——
+# 命中一条只加到 0.4（低于阈值，不输出），命中两条累加到 0.8（输出）。
+#
+# 这样设计的好处是：置信度能真实反映「有几个独立特征支持这个结论」，
+# 而不是把所有特征压成一个布尔值。
+#
+# ⚠️ 正则建议用 YAML 单引号包裹：单引号内反斜杠是字面量，不需要双写转义。
+
+# ══════════════════════════ 中间件 / Web 服务器 ══════════════════════════
+
+- name: Nginx
+  category: middleware
+  confidence: 0.9
+  headers:
+    - 'Server:\s*nginx'
+  version_regex: 'Server:\s*nginx/([\d.\w]+)'
+
+- name: Apache httpd
+  category: middleware
+  confidence: 0.9
+  headers:
+    - 'Server:\s*Apache(?:/[\d.]+)?'
+  version_regex: 'Server:\s*Apache/([\d.\w]+)'
+
+- name: Microsoft IIS
+  category: middleware
+  confidence: 0.9
+  headers:
+    - 'Server:\s*Microsoft-IIS'
+  version_regex: 'Microsoft-IIS/([\d.]+)'
+
+- name: Apache Tomcat
+  category: middleware
+  confidence: 0.7
+  body:
+    - 'Apache Tomcat/([\d.]+)'
+    - '<title>Apache Tomcat'
+  version_regex: 'Apache Tomcat/([\d.]+)'
+
+- name: OpenResty
+  category: middleware
+  confidence: 0.85
+  headers:
+    - 'Server:\s*openresty'
+
+- name: Caddy
+  category: middleware
+  confidence: 0.85
+  headers:
+    - 'Server:\s*Caddy'
+
+- name: Jetty
+  category: middleware
+  confidence: 0.7
+  headers:
+    - 'Server:\s*Jetty'
+  body:
+    - 'Powered by Jetty'
+
+- name: gunicorn
+  category: middleware
+  confidence: 0.8
+  headers:
+    - 'Server:\s*gunicorn'
+
+- name: uvicorn
+  category: middleware
+  confidence: 0.8
+  headers:
+    - 'Server:\s*uvicorn'
+
+# ══════════════════════════ 开发语言 / 运行时 ══════════════════════════
+
+- name: PHP
+  category: language
+  confidence: 0.5
+  headers:
+    - 'X-Powered-By:\s*PHP'
+  version_regex: 'X-Powered-By:\s*PHP/([\d.]+)'
+
+- name: PHP
+  category: language
+  confidence: 0.3
+  cookies:
+    - 'PHPSESSID'
+
+- name: ASP.NET
+  category: framework
+  confidence: 0.6
+  headers:
+    - 'X-AspNet-Version'
+    - 'X-AspNetMvc-Version'
+  version_regex: 'X-AspNet-Version:\s*([\d.]+)'
+
+- name: ASP.NET
+  category: framework
+  confidence: 0.3
+  cookies:
+    - 'ASP\.NET_SessionId'
+
+- name: Java
+  category: language
+  confidence: 0.4
+  cookies:
+    - 'JSESSIONID'
+
+- name: Node.js / Express
+  category: framework
+  confidence: 0.7
+  headers:
+    - 'X-Powered-By:\s*Express'
+
+# ══════════════════════════ CMS / 应用框架 ══════════════════════════
+
+# WordPress：三个独立特征，命中越多置信度越高
+- name: WordPress
+  category: cms
+  confidence: 0.4
+  body:
+    - 'wp-content/'
+
+- name: WordPress
+  category: cms
+  confidence: 0.4
+  body:
+    - 'wp-includes/'
+
+- name: WordPress
+  category: cms
+  confidence: 0.3
+  body:
+    - 'name="generator"\s+content="WordPress'
+  version_regex: 'content="WordPress\s*([\d.]+)"'
+
+- name: Drupal
+  category: cms
+  confidence: 0.7
+  headers:
+    - 'X-Generator:\s*Drupal'
+  body:
+    - 'sites/default/files'
+  version_regex: 'Drupal\s*([\d.]+)'
+
+- name: Joomla
+  category: cms
+  confidence: 0.7
+  body:
+    - '/media/jui/'
+    - '/components/com_content/'
+  version_regex: '<meta name="generator" content="Joomla!\s*([\d.]+)'
+
+- name: Discuz!
+  category: cms
+  confidence: 0.8
+  body:
+    - 'Powered by Discuz'
+  version_regex: 'Discuz!\s*([\d.X]+)'
+
+- name: ThinkPHP
+  category: framework
+  confidence: 0.6
+  headers:
+    - 'X-Powered-By:\s*ThinkPHP'
+  version_regex: 'ThinkPHP\s*([\d.]+)'
+
+- name: Spring Boot
+  category: framework
+  confidence: 0.7
+  body:
+    - '"status":404,"error":"Not Found"'
+    - 'Whitelabel Error Page'
+
+- name: Django
+  category: framework
+  confidence: 0.6
+  cookies:
+    - 'csrftoken'
+  body:
+    - 'csrfmiddlewaretoken'
+
+- name: Flask
+  category: framework
+  confidence: 0.5
+  body:
+    - 'Werkzeug'
+
+- name: Laravel
+  category: framework
+  confidence: 0.6
+  cookies:
+    - 'laravel_session'
+    - 'XSRF-TOKEN'
+
+# ══════════════════════════ 前端框架 / 库 ══════════════════════════
+
+- name: jQuery
+  category: javascript
+  confidence: 0.6
+  body:
+    - 'jquery(?:-|\.)([\d.]+)?(?:\.min)?\.js'
+  version_regex: 'jquery[-.]([\d.]+)'
+
+- name: Bootstrap
+  category: javascript
+  confidence: 0.6
+  body:
+    - 'bootstrap(?:\.min)?\.css'
+
+- name: Vue.js
+  category: javascript
+  confidence: 0.5
+  body:
+    - 'vue(?:\.min)?\.js'
+    - 'data-v-[0-9a-f]{8}'
+
+- name: React
+  category: javascript
+  confidence: 0.5
+  body:
+    - 'react(?:-dom)?(?:\.production\.min)?\.js'
+    - '_reactRootContainer'
+
+# ══════════════════════════ 运维 / 监控平台 ══════════════════════════
+
+- name: Grafana
+  category: other
+  confidence: 0.8
+  body:
+    - '<title>Grafana'
+    - 'grafana-app'
+  version_regex: 'Grafana v?([\d.]+)'
+
+- name: Kibana
+  category: other
+  confidence: 0.8
+  body:
+    - 'kbn-injected-metadata'
+    - '<title>Kibana'
+
+- name: Jenkins
+  category: other
+  confidence: 0.8
+  headers:
+    - 'X-Jenkins'
+  body:
+    - '<title>Dashboard \[Jenkins\]'
+  version_regex: 'X-Jenkins:\s*([\d.]+)'
+
+- name: GitLab
+  category: other
+  confidence: 0.7
+  headers:
+    - 'X-Gitlab'
+  body:
+    - 'gon.gitlab_url'
+    - 'GitLab Community Edition'
+
+- name: SonarQube
+  category: other
+  confidence: 0.8
+  body:
+    - '<title>SonarQube'
+    - 'sonarqube'
+
+- name: Swagger UI
+  category: other
+  confidence: 0.7
+  body:
+    - 'swagger-ui-container'
+    - 'swagger-ui-bundle\.js'
+
+- name: Elasticsearch
+  category: other
+  confidence: 0.8
+  body:
+    - '"cluster_name"\s*:'
+    - '"lucene_version"\s*:'
+
+- name: RabbitMQ Management
+  category: other
+  confidence: 0.8
+  body:
+    - '<title>RabbitMQ Management'
+
+# ══════════════════════════ 商业中间件 ══════════════════════════
+
+- name: Oracle WebLogic
+  category: middleware
+  confidence: 0.8
+  body:
+    - '<title>Error 404--Not Found'
+    - 'WebLogic'
+  headers:
+    - 'X-WebLogic'
+
+- name: JBoss / WildFly
+  category: middleware
+  confidence: 0.7
+  headers:
+    - 'X-Powered-By:\s*Undertow'
+  body:
+    - 'JBoss'
+    - 'WildFly'
+
+# ══════════════════════════ CDN / 云服务 ══════════════════════════
+
+- name: Cloudflare
+  category: other
+  confidence: 0.85
+  headers:
+    - 'Server:\s*cloudflare'
+    - 'CF-RAY:'
+
+- name: 阿里云 CDN
+  category: other
+  confidence: 0.8
+  headers:
+    - 'Via:.*aliyun'
+    - 'X-Swift-SaveTime'
+    - 'EagleId:'
+
+- name: 腾讯云 CDN
+  category: other
+  confidence: 0.8
+  headers:
+    - 'X-NWS-LOG-UUID'
+    - 'Server:\s*tencent-cos'
+
+- name: Amazon S3 / CloudFront
+  category: other
+  confidence: 0.8
+  headers:
+    - 'X-Amz-'
+    - 'Server:\s*AmazonS3'
+    - 'X-Cache:\s*Hit from cloudfront'
+
+# ══════════════════════════ 安全设备 / WAF ══════════════════════════
+
+- name: 安全狗 WAF
+  category: other
+  confidence: 0.7
+  cookies:
+    - 'safedog'
+
+- name: 宝塔面板
+  category: other
+  confidence: 0.7
+  headers:
+    - 'Server:\s*BTWAF'
+    - 'X-Powered-By:\s*Bt'

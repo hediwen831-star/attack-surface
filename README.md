@@ -5,7 +5,7 @@
 
 ```
 Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML PoC 引擎
-112 个单元测试 · ruff 零告警 · 零网络依赖的单测 · Docker Compose 一键启动
+196 个单元测试 · ruff 零告警 · 零网络依赖的单测 · Docker Compose 一键启动
 ```
 
 ---
@@ -33,6 +33,9 @@ Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML Po
 | **自研 YAML PoC 引擎** | 4 种匹配器（status/word/regex/dsl）+ 提取器 + 热加载 |
 | **白名单 DSL（无 eval）** | 支持条件表达式但**不支持任意代码** —— 加载第三方 PoC 不等于执行任意代码 |
 | **负向对照校验** | 命中后向同目录随机路径发对照请求，识别「通配页面」误报 |
+| **端口扫描与服务识别** | asyncio TCP 连接扫描 + 两阶段 banner 抓取（先静默读，未果再按端口类型主动探测） |
+| **Web 指纹识别** | favicon mmh3 哈希（纯 Python 实现，与官方库逐字节一致）+ 46 条内置规则 + 置信度累加 |
+| **报告导出** | JSON / Markdown / HTML 三种格式，**跨任务聚合**（同一目标的多条扫描链路汇总成一份） |
 | **六表资产模型** | domain/IP/port/service/component/vuln 关联建模，支持按维度聚合 |
 | **资产变更 diff** | 对比两次扫描，输出新增/消失/未变资产 |
 | **结构化日志** | `key=value` 格式，可接 ELK / Loki |
@@ -72,6 +75,16 @@ python -m asp.cli poc list
 
 # 对目标执行漏洞验证
 python -m asp.cli poc run http://127.0.0.1:8080
+
+# 端口扫描 + 服务识别（默认扫内置常见端口表）
+python -m asp.cli portscan 127.0.0.1
+
+# 指定端口范围并落库
+python -m asp.cli portscan 127.0.0.1 --ports 1-1024 --save
+
+# 生成报告（从数据库聚合该目标的全部扫描结果）
+python -m asp.cli report 127.0.0.1 -f html -o report.html
+python -m asp.cli report example.com -f md
 
 # 生成配置模板
 python -m asp.cli init
@@ -312,26 +325,33 @@ DNS 用标准库（不用 aiodns）。
 ```
 attack-surface/
 ├── asp/
-│   ├── cli.py                  # 命令行入口
+│   ├── cli.py                  # 命令行入口（subdomain / portscan / poc / report / diff / init）
 │   ├── config.py               # 配置加载、校验、环境变量覆盖
 │   ├── exceptions.py           # 统一异常树（可重试 / 不可重试）
 │   ├── logger.py               # 结构化日志
+│   ├── report.py               # 报告生成（JSON / Markdown / HTML，跨任务聚合）
 │   ├── core/
 │   │   ├── http.py             # 异步 HTTP 客户端（限速/并发/重试）
 │   │   └── database.py         # 六表资产模型
 │   ├── discover/
 │   │   ├── base.py             # Source 抽象 + DiscoveredAsset
 │   │   ├── crtsh.py            # 证书透明日志源
-│   │   └── bruteforce.py       # DNS 爆破 + 泛解析检测
+│   │   ├── bruteforce.py       # DNS 爆破 + 泛解析检测
+│   │   ├── portscan.py         # 端口扫描 + 服务指纹识别
+│   │   └── fingerprint.py      # Web 指纹（含纯 Python MurmurHash3 实现）
 │   ├── plugins/
 │   │   ├── loader.py           # YAML PoC 加载与校验
 │   │   ├── matchers.py         # 匹配器 + 提取器 + 白名单 DSL
 │   │   └── engine.py           # 执行引擎 + 负向对照校验
 │   ├── services/
-│   │   └── subdomain.py        # 编排、聚合、验证、落库、diff
+│   │   ├── subdomain.py        # 子域名编排、聚合、验证、落库、diff
+│   │   ├── host.py             # 主机测绘编排（端口 + 指纹 + 落库）
+│   │   └── vuln.py             # 漏洞结果持久化 + target 归一化
+│   ├── rules/
+│   │   └── fingerprints.yaml   # 46 条 Web 指纹规则
 │   └── pocs/                   # 内置检测插件
 ├── conf/config.example.yaml
-├── tests/                      # 112 个单元测试（全部离线）
+├── tests/                      # 196 个单元测试（全部离线）
 ├── .github/workflows/ci.yml
 ├── pyproject.toml
 └── requirements.txt
@@ -344,7 +364,7 @@ attack-surface/
 ```bash
 pip install -r requirements-dev.txt
 
-pytest -v            # 112 个用例
+pytest -v            # 196 个用例
 ruff check asp tests # 静态检查
 ```
 
@@ -396,11 +416,11 @@ high    sql-injection-error-based   .../sqli/medium.php?id=1%27                 
 - [x] 六表资产模型 + 资产变更 diff
 - [x] YAML PoC 引擎（4 种匹配器 + 提取器 + 白名单 DSL）
 - [x] 负向对照校验
-- [x] 112 个离线单元测试 + GitHub Actions CI
-- [ ] 端口扫描与服务指纹识别（nmap/masscan 调度）
-- [ ] Web 指纹识别（favicon hash / 响应头 / 组件识别）
+- [x] 196 个离线单元测试 + GitHub Actions CI
+- [x] 端口扫描与服务识别（asyncio 连接扫描 + 两阶段 banner 抓取）
+- [x] Web 指纹识别（纯 Python MurmurHash3 + 46 条规则 + 置信度累加）
+- [x] 报告导出（HTML / Markdown / JSON，跨任务聚合）
 - [ ] FastAPI REST 接口 + Vue3 可视化看板
-- [ ] 报告导出（HTML / Markdown / JSON）
 - [ ] LLM 辅助告警降噪（对疑似结果做语义研判，量化误报率下降幅度）
 
 ---
