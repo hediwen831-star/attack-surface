@@ -107,7 +107,7 @@ async def resolve_host(hostname: str, timeout: float = DNS_TIMEOUT) -> set[str]:
     - ``aiodns`` 需要编译 c-ares，Windows 上安装容易翻车
     - ``getaddrinfo`` 底层走线程池，虽然不是「真异步」，
       但 DNS 查询本身极快（通常 <50ms），实测 200 并发下不是瓶颈
-    - 零额外依赖 → 别人 clone 下来就能跑，这对可复用性很重要
+    - 零额外依赖 → 别人 clone 下来就能跑，不用先配环境
 
     Args:
         hostname: 要解析的域名。
