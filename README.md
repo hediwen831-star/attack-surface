@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/hediwen831-star/attack-surface/actions/workflows/ci.yml/badge.svg)](https://github.com/hediwen831-star/attack-surface/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-317%20passed-brightgreen)](#测试)
+[![Tests](https://img.shields.io/badge/tests-318%20passed-brightgreen)](#测试)
 [![Ruff](https://img.shields.io/badge/lint-ruff%20clean-brightgreen)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-compose%20ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
@@ -12,7 +12,7 @@
 
 ```
 Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML PoC 引擎
-317 个单元测试 · ruff 零告警 · 零网络依赖的单测 · Web 看板 + REST 接口
+318 个单元测试 · ruff 零告警 · 零网络依赖的单测 · Web 看板 + REST 接口
 ```
 
 ---
@@ -479,7 +479,7 @@ attack-surface/
 │   │   └── fingerprints.yaml   # 46 条 Web 指纹规则
 │   └── pocs/                   # 内置检测插件
 ├── conf/config.example.yaml
-├── tests/                      # 317 个单元测试（全部离线）
+├── tests/                      # 318 个单元测试（全部离线）
 ├── .github/workflows/ci.yml
 ├── pyproject.toml
 └── requirements.txt
@@ -492,7 +492,7 @@ attack-surface/
 ```bash
 pip install -r requirements-dev.txt
 
-pytest -v            # 317 个用例
+pytest -v            # 318 个用例
 ruff check asp tests # 静态检查
 ```
 
@@ -544,7 +544,7 @@ high    sql-injection-error-based   .../sqli/medium.php?id=1%27                 
 - [x] 六表资产模型 + 资产变更 diff
 - [x] YAML PoC 引擎（4 种匹配器 + 提取器 + 白名单 DSL）
 - [x] 负向对照校验
-- [x] 317 个离线单元测试 + GitHub Actions CI
+- [x] 318 个离线单元测试 + GitHub Actions CI
 - [x] 端口扫描与服务识别（asyncio 连接扫描 + 两阶段 banner 抓取）
 - [x] Web 指纹识别（纯 Python MurmurHash3 + 46 条规则 + 置信度累加）
 - [x] 报告导出（HTML / Markdown / JSON，跨任务聚合）
