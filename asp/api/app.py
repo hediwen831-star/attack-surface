@@ -178,6 +178,23 @@ def create_app(config: Config | None = None, *, token: str | None = None) -> Fas
     api_token = token or os.environ.get("ASP_API_TOKEN") or None
     require_token = make_token_dependency(api_token)
 
+    from contextlib import asynccontextmanager
+
+    from ..core.database import dispose_engines
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        """应用关闭时释放数据库连接池。
+
+        Engine 是进程级对象（见 core.database.get_engine），
+        不在关闭时显式 dispose 也不会出错 —— 但那样「连接什么时候关」
+        就交给 GC 决定了。显式释放让它变成确定的。
+        """
+        try:
+            yield
+        finally:
+            dispose_engines()
+
     app = FastAPI(
         title="ASP — 攻击面测绘平台",
         description=(
@@ -185,6 +202,7 @@ def create_app(config: Config | None = None, *, token: str | None = None) -> Fas
             "⚠️ 会发起主动扫描的端点需要携带 X-API-Token 头（若服务端配置了 token）。"
         ),
         version=__version__,
+        lifespan=_lifespan,
     )
     app.state.config = cfg
     app.state.token = api_token
@@ -444,10 +462,12 @@ def _collect_targets(config: Config) -> list[dict[str, Any]]:
     """从数据库汇总所有目标。"""
     from sqlalchemy import func, select
 
-    from ..core.database import Asset, ScanTask, Vuln, create_db_engine, init_db, session_scope
+    from ..core.database import Asset, ScanTask, Vuln, get_engine, session_scope
 
-    engine = create_db_engine(config.database)
-    init_db(engine)
+    # Engine 按数据库路径复用（含建表），不每次请求新建 ——
+    # 详见 core.database.get_engine 的说明：原先这里每次请求都建一个 Engine
+    # 且从不 dispose，长时间运行会累积连接（SQLite 下是文件句柄）。
+    engine = get_engine(config.database)
 
     with session_scope(engine) as session:
         rows = session.execute(
@@ -501,13 +521,12 @@ def _collect_global_stats(config: Config) -> dict[str, Any]:
         Port,
         ScanTask,
         Vuln,
-        create_db_engine,
-        init_db,
+        get_engine,
         session_scope,
     )
 
-    engine = create_db_engine(config.database)
-    init_db(engine)
+    # 同 _collect_targets：复用缓存的 Engine，避免每请求新建 + 跑一次 DDL
+    engine = get_engine(config.database)
 
     with session_scope(engine) as session:
         def count(model) -> int:

@@ -96,3 +96,17 @@ class FakeHttpClient:
 def fake_client():
     """返回 ``FakeHttpClient`` 类本身，便于各测试自行构造路由。"""
     return FakeHttpClient
+
+@pytest.fixture(autouse=True)
+def _dispose_db_engines():
+    """每个用例结束后释放缓存的数据库 Engine。
+
+    `core.database.get_engine()` 按路径缓存 Engine —— 那是进程级的长生命周期
+    对象（因为 Web API 需要复用，见该函数的说明）。但测试里每个用例用的是
+    不同的临时库，如果一直不释放，缓存会持续增长、连接也不关，
+    表现为一大堆 `ResourceWarning: unclosed database`。
+    """
+    yield
+    from asp.core.database import dispose_engines
+
+    dispose_engines()

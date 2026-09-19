@@ -340,6 +340,66 @@ def session_scope(engine: Engine) -> Session:
     return Session(engine)
 
 
+# 按数据库路径缓存的 Engine —— 见 get_engine() 的说明
+_ENGINE_CACHE: dict[str, Engine] = {}
+
+
+def get_engine(database: str | Path = "asp.db", *, echo: bool = False) -> Engine:
+    """取一个**复用的** Engine（按数据库路径缓存），首次调用时顺带建表。
+
+    ══════════════════════════════════════════════════════════════════
+    为什么要这个函数，而不是到处 create_db_engine()
+    ══════════════════════════════════════════════════════════════════
+
+    原来的写法是每个用到数据库的地方各自 `create_db_engine()`。
+    对一次性的 CLI 命令无所谓 —— 进程马上就退出了。但 Web API 不是：
+
+        /api/stats    ┐
+        /api/targets  ┘  每次请求都 create_db_engine() + init_db()
+
+    这带来两个问题：
+
+      ① **连接泄漏**。Engine 自带连接池，从不 dispose 的话
+         SQLite 连接（也就是文件句柄）会一直累积到进程退出。
+         Engine 在设计上就是**长生命周期、进程级**的对象。
+
+      ② **每个请求跑一次 DDL**。`init_db()` 是 `create_all()`，
+         它会反射一遍现有表结构（每张表一次 PRAGMA）——
+         对一个只读的统计接口来说，这是纯粹的浪费，
+         而且会短暂拿写锁。
+
+    「一个进程一个 Engine」本来就是 SQLAlchemy 的推荐用法，
+    这个函数只是把它落实到代码里。Engine 本身是线程安全的，
+    缓存不需要加锁。
+
+    Args:
+        database: 数据库路径（同时作为缓存键）。
+        echo: 是否打印 SQL，只对首次创建生效。
+
+    Returns:
+        复用的 Engine 实例。
+    """
+    key = str(database)
+    engine = _ENGINE_CACHE.get(key)
+    if engine is None:
+        engine = create_db_engine(database, echo=echo)
+        init_db(engine)
+        _ENGINE_CACHE[key] = engine
+    return engine
+
+
+def dispose_engines() -> None:
+    """释放所有缓存过的 Engine —— 进程退出 / 应用关闭时调用。
+
+    不调用也不会出错（进程退出时操作系统会回收），
+    但显式释放能让「连接什么时候关」这件事变成确定的，
+    而不是交由 GC 决定。测试里也可以用它来隔离用例。
+    """
+    for engine in _ENGINE_CACHE.values():
+        engine.dispose()
+    _ENGINE_CACHE.clear()
+
+
 __all__ = [
     "Base",
     "ScanTask",
@@ -351,4 +411,6 @@ __all__ = [
     "create_db_engine",
     "init_db",
     "session_scope",
+    "get_engine",
+    "dispose_engines",
 ]

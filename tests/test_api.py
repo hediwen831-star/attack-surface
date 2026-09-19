@@ -210,3 +210,34 @@ def test_scan_poc_rejects_empty_result_set(client: TestClient):
     )
     assert r.status_code == 400
     assert "没有匹配的 PoC" in r.json()["detail"]
+
+def test_stats_reuses_single_engine(client: TestClient) -> None:
+    """连续调用统计接口，不应不断新建数据库 Engine。
+
+    回归测试。原先 `_collect_targets()` / `_collect_global_stats()`
+    每次都 `create_db_engine()` + `init_db()`，而 Engine 自带连接池
+    且从不 dispose。于是每来一个请求就多一份连接、多跑一次表结构反射
+    （`create_all` 会对每张表做一次 PRAGMA），
+    对一个只读统计接口来说完全是浪费 —— 长时间运行还会累积连接。
+
+    修法是 `core.database.get_engine()`：按路径缓存，一个进程一个 Engine
+    （这本就是 SQLAlchemy 的推荐用法）。
+
+    断言的是「重复调用不会让缓存变大」，而不是具体的连接数 ——
+    后者依赖驱动实现，前者才是这里真正要守住的性质。
+    """
+    from asp.core import database
+
+    # 清掉进入本用例前可能残留的引擎，从干净状态开始计数
+    database.dispose_engines()
+
+    client.get("/api/stats")
+    after_first = dict(database._ENGINE_CACHE)
+    assert len(after_first) == 1, "第一次调用应当创建且只创建一个 Engine"
+
+    client.get("/api/stats")
+    client.get("/api/targets")
+    client.get("/api/stats")
+
+    assert len(database._ENGINE_CACHE) == 1, "重复调用不应新建 Engine"
+    assert after_first == database._ENGINE_CACHE, "应当复用同一个 Engine 实例"
