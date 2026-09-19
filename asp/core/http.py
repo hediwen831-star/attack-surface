@@ -48,7 +48,27 @@ class RateLimiter:
         self._lock = asyncio.Lock()
 
     async def acquire(self, tokens: float = 1.0) -> None:
-        """获取令牌，不足则等到足够为止。"""
+        """获取令牌，不足则等到足够为止。
+
+        Raises:
+            ValueError: 请求的令牌数超过桶容量。
+
+                ⚠️ 这不是「多等一会儿就能满足」的情况 ——
+                桶容量是**补充的上限**，永远不可能同时持有超过容量的令牌。
+
+                踩过的坑：最初没有这个校验，于是 `acquire(tokens=4)` 配
+                `burst=2` 会让 while 循环永远转下去：每次补到 2 就发现不够 4，
+                于是继续 sleep 等补充 —— **死循环**。
+
+                **一个能静默死循环的 API，比一个会抛异常的 API 危险得多。**
+                所以这里显式拒绝，把配置错误暴露在调用点。
+        """
+        if tokens > self.capacity:
+            raise ValueError(
+                f"请求的令牌数 {tokens} 超过桶容量 {self.capacity} —— "
+                f"这在语义上无法满足（容量是补充上限），请调大 burst"
+            )
+
         async with self._lock:
             while True:
                 now = time.monotonic()
