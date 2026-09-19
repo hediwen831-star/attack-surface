@@ -28,7 +28,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          # 以可编辑模式安装【包本身】+ dev 依赖。
+          #
+          # ⚠️ 这里曾经漏掉「安装包本身」，只装了 requirements-dev.txt，
+          # 导致 CI 里报 `ModuleNotFoundError: No module named 'asp'`。
+          # 而本地一直没暴露这个问题 —— 因为我在本地跑测试时设了 PYTHONPATH。
+          #
+          # 教训：**本地用 PYTHONPATH 绕过安装问题，会掩盖「包没装好」这个真实缺陷。**
+          # 使用者 clone 下来直接执行 `python -m asp.cli` 同样会失败。
+          # CI 必须走和使用者完全一样的安装路径，否则它验证的不是真实场景。
+          pip install -e ".[dev]"
 
       - name: Lint (ruff)
         run: ruff check asp tests
