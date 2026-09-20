@@ -30,6 +30,15 @@ Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML Po
 
 ---
 
+## 看板
+
+扫描结果会落进本地 SQLite，Web 看板读它做汇总：
+
+![ASP 看板：总览指标、严重级别分布、已测绘目标](docs/images/dashboard.png)
+
+上面这张是拿自带靶场（[vulnlab](https://github.com/hediwen831-star/vulnlab)）
+实测跑出来的真实数据，不是占位图。
+
 ## 架构总览
 
 ```mermaid
