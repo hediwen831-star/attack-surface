@@ -9,13 +9,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from conftest import FakeHttpClient
 
+from asp.core.http import Response
 from asp.plugins.engine import (
     build_variables,
     render,
     run_poc,
     scan_target,
+    to_json,
 )
 from asp.plugins.loader import parse_poc
 
@@ -380,3 +384,86 @@ async def test_scan_target_records_zero_hits(fake_client):
     result = await scan_target("http://x", [poc], fake_client())
     assert result.hit_count == 0
     assert result.poc_count == 1
+
+
+# ------------------------------------------------- 目标可达性（真实 bug 的回归）
+
+
+async def test_reachable_when_real_response(fake_client):
+    """正常拿到 2xx/4xx 时，应判定目标可达且不产生误导性错误。"""
+    poc = _poc([{"type": "status", "status": [200]}])
+    client = fake_client({"/target": Response(url="http://x/target", status=200, content=b"ok")})
+    result = await scan_target("http://x", [poc], client)
+    assert result.target_reachable is True
+    assert result.responses_ok >= 1
+
+
+async def test_unreachable_when_all_responses_are_5xx(fake_client):
+    """全部响应都是 5xx 时必须判为不可达。
+
+    这是实测踩到的真实场景：本机跑着 HTTP 代理时，向已关闭的端口发请求
+    得到的是代理返回的 **502**（而不是"连接被拒"）。502 是一个结构完整的
+    响应，如果只看「拿到响应了吗」会误判成目标可达，
+    然后输出「未发现漏洞」—— 使用者以为目标干净。
+    """
+    poc = _poc([{"type": "status", "status": [200]}], paths=["{{BaseURL}}/target"])
+    client = fake_client({}, default_status=502)
+    result = await scan_target("http://x", [poc], client)
+
+    assert result.target_reachable is False
+    assert result.responses_ok >= 1
+    assert result.responses_server_error == result.responses_ok
+    # 必须留下一条说明为什么结果无效的错误，而不是静默给个 0
+    assert any("5xx" in e for e in result.errors)
+
+
+async def test_unreachable_when_connection_fails(fake_client):
+    """连接层失败（拿不到任何响应）同样判不可达。"""
+    poc = _poc([{"type": "status", "status": [200]}])
+
+    class _DeadClient:
+        async def request(self, method: str, url: str, **kwargs: Any) -> Response:
+            return Response(url=url, status=0, error="Connection refused")
+
+    result = await scan_target("http://x", [poc], _DeadClient())
+    assert result.target_reachable is False
+    assert result.responses_ok == 0
+    assert any("没有任何请求成功" in e for e in result.errors)
+
+
+async def test_mixed_5xx_and_ok_is_still_reachable(fake_client):
+    """只要有一个非 5xx 响应，就认为目标可达 ——
+
+    扫描过程中个别路径返回 500 是常见的，不能因此否定整次扫描。
+    这条测试守住"不要过度收紧"这一侧。
+    """
+    poc = _poc(
+        [{"type": "status", "status": [200]}],
+        paths=["{{BaseURL}}/boom", "{{BaseURL}}/target"],
+    )
+    client = fake_client({"/target": Response(url="http://x/target", status=200, content=b"ok")})
+    # /boom 走 default_status
+    client.default_status = 500
+    result = await scan_target("http://x", [poc], client)
+    assert result.target_reachable is True
+
+
+async def test_unreachable_result_serializes_reachability(fake_client):
+    """JSON 输出必须带上可达性字段 —— 自动化流水线同样需要区分这两种情况。"""
+    import json
+
+    poc = _poc([{"type": "status", "status": [200]}])
+    client = fake_client({}, default_status=502)
+    result = await scan_target("http://x", [poc], client)
+    data = json.loads(to_json(result))
+    assert data["target_reachable"] is False
+    assert data["responses_ok"] >= 1
+    assert data["errors"]
+
+
+async def test_no_error_when_scan_succeeds(fake_client):
+    """正常扫描不应产生"不可达"噪音 —— 反向验证，防止误报。"""
+    poc = _poc([{"type": "status", "status": [200]}])
+    client = fake_client({"/target": Response(url="http://x/target", status=200, content=b"ok")})
+    result = await scan_target("http://x", [poc], client)
+    assert not any("无效" in e for e in result.errors)

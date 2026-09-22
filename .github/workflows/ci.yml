@@ -51,6 +51,41 @@ jobs:
           python -m asp.cli poc list
           python -m asp.cli --help
 
+      - name: Smoke test JSON contract
+        run: |
+          # `--json` 必须真的往 stdout 输出可解析的 JSON，且带可达性字段。
+          #
+          # 这一条是回归守卫：`cmd_poc_run` 曾经漏掉 `print(text)`，
+          # 导致 `--json` 不加 `-o` 时输出空白 —— 而单元测试没覆盖到入口层，
+          # 这个 bug 一直活到补上 cli.py 覆盖率。
+          # 单元测试现在守住了，这里再从"使用者实际怎么调用"的角度验一遍。
+          python - <<'PY'
+          import json, subprocess, sys
+
+          # 指向一个必定连不上的端口，走「目标不可达」分支
+          proc = subprocess.run(
+              [sys.executable, "-m", "asp.cli", "poc", "run",
+               "http://127.0.0.1:1", "--json"],
+              capture_output=True, text=True, timeout=120,
+          )
+          out = proc.stdout
+          assert out.lstrip().startswith("{"), (
+              f"--json 必须输出 JSON，实际 stdout 前 200 字符: {out[:200]!r}"
+          )
+          data = json.loads(out)
+          assert "target_reachable" in data, "JSON 必须带可达性字段"
+          assert "errors" in data, "JSON 必须带 errors 字段"
+          assert data["target_reachable"] is False, "连不上的目标必须判为不可达"
+          assert data["errors"], "不可达必须留下 errors"
+          # 退出码 2 = 目标不可达。绝不能是 0（那会被流水线当成"扫过了很干净"）
+          assert proc.returncode == 2, (
+              f"目标不可达时退出码必须是 2，实际 {proc.returncode}"
+          )
+          print("JSON contract OK:", json.dumps(
+              {k: data[k] for k in ("target_reachable", "responses_ok")},
+              ensure_ascii=False))
+          PY
+
   build:
     name: Build package
     runs-on: ubuntu-latest

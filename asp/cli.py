@@ -288,12 +288,44 @@ def cmd_poc_run(args: argparse.Namespace, config: Config) -> int:
 
     if args.json:
         text = to_json(result)
+        # 必须真的打印出来。
+        #
+        # 这里曾经漏掉过这一行 —— 于是 `asp poc run <target> --json` 在
+        # 不给 `-o` 的情况下**什么也不输出**，终端一片空白：
+        # 管道下游的 `jq` 拿到空输入，脚本里 `$(asp poc run ... --json)`
+        # 得到空字符串，看起来像"没扫到东西"。
+        # 而只要加了 `-o out.json` 又一切正常 —— 所以手工测试时极易漏过。
+        # 补 cli.py 覆盖率时正是靠这条断言抓出来的。
+        print(text)
     else:
         color = _use_color()
         print()
         print(f"目标: {result.target}")
         print(f"执行 PoC: {result.poc_count}   耗时: {result.elapsed:.2f}s")
         print(f"命中: {result.hit_count}")
+
+        # ------------------------------------------------------------------
+        # 目标不可达时必须显式警告
+        #
+        # 「未发现漏洞」这几个字太容易被当成结论了。目标连不上时
+        # 命中数同样是 0，但它和「扫过了确实没洞」是两回事 ——
+        # 前者什么结论都不能得出，后者才是一份有效结果。
+        # ------------------------------------------------------------------
+        if not result.target_reachable:
+            print()
+            print("⚠️  目标不可达：没有任何请求成功。")
+            print("    本次结果【无效】，不能据此判断目标没有漏洞。")
+            if result.errors:
+                print(f"    错误明细（共 {len(result.errors)} 条，显示前 3 条）：")
+                for item in result.errors[:3]:
+                    print(f"      · {item}")
+        elif result.errors:
+            # 部分请求失败：可能只是个别路径 404，但仍值得让使用者知道
+            print()
+            print(f"ℹ️  有 {len(result.errors)} 个请求未成功（目标本身可达）：")
+            for item in result.errors[:3]:
+                print(f"      · {item}")
+
         if result.vulns:
             print()
             rows = []
@@ -316,8 +348,15 @@ def cmd_poc_run(args: argparse.Namespace, config: Config) -> int:
         else:
             print("\n(未发现漏洞)")
         text = json.dumps(
-            {"target": result.target, "hits": result.hit_count,
-             "vulns": [v.to_dict() for v in result.vulns]},
+            {
+                "target": result.target,
+                "poc_count": result.poc_count,
+                "hit_count": result.hit_count,
+                "target_reachable": result.target_reachable,
+                "responses_ok": result.responses_ok,
+                "errors": result.errors,
+                "vulns": [v.to_dict() for v in result.vulns],
+            },
             ensure_ascii=False,
             indent=2,
         )
@@ -326,7 +365,15 @@ def cmd_poc_run(args: argparse.Namespace, config: Config) -> int:
         Path(args.output).write_text(text, encoding="utf-8")
         logger.info("output_written path=%s", args.output)
 
-    # 退出码约定：有命中返回 1，便于在 CI / 流水线里用返回码判断
+    # 退出码约定：
+    #   1 —— 有命中（发现漏洞）
+    #   2 —— 目标不可达（本次结果无效，流水线应当区别对待，而不是当成"干净"）
+    #   0 —— 扫描有效且无命中
+    #
+    # 为什么把"不可达"单列一个码：在 CI 里跑基准测试时，
+    # 靶场没起来和靶场真的没漏洞，需要完全不同的处置方式。
+    if not result.target_reachable and result.poc_count:
+        return 2
     return 1 if result.vulns else 0
 
 

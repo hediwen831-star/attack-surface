@@ -106,6 +106,48 @@ class EngineResult:
     elapsed: float = 0.0
     errors: list[str] = field(default_factory=list)
 
+    responses_ok: int = 0
+    """成功拿到可用 HTTP 响应的请求数（不含连接失败、超时、5xx 网关错误）。
+
+    用途是回答一个比命中数更基础的问题：**这次到底扫到目标了吗？**
+
+    没有它会出现这种情况：目标不可达（DNS 失败、连接被拒、被代理挡成 502），
+    所有 PoC 都打不出去，于是 hit_count=0 ——
+    输出上写「未发现漏洞」，**和「扫过了，确实没有漏洞」完全无法区分**。
+
+    这是静默失败里危害最大的一种：使用者拿着这份报告以为目标干净。
+    所以宁可把「一个响应都没拿到」当成错误上报，也不能当成「无漏洞」。
+    """
+
+    responses_server_error: int = 0
+    """命中 5xx 的响应数。
+
+    单独统计而不是直接算进 responses_ok，原因是实测踩过一个很隐蔽的坑：
+
+    本机跑着 HTTP 代理时，向已关闭的端口发请求【不会】得到"连接被拒"，
+    而是代理返回 **502 Bad Gateway**。502 是一个结构完整的 HTTP 响应，
+    如果只看"拿到响应了吗"，会误判成目标可达 —— 然后报告「未发现漏洞」。
+
+    所以「拿到了 5xx」和「拿到了 2xx/3xx/4xx」必须分开数。
+    """
+
+    @property
+    def target_reachable(self) -> bool:
+        """是否至少成功读到过一个「非服务端错误」的响应。
+
+        为什么排除 5xx：
+          · 5xx 表示服务端自己出问题了（或中间网关没能把请求送达上游），
+            它不能证明「我们扫的是一个正常工作的应用」。
+          · 404 之类的 4xx 反而是好信号 —— 说明应用确实在处理路由，
+            只是这个路径不存在，属于正常扫描过程的一部分。
+          · 实测：代理返回 502 时，所有 PoC 都"拿到了响应"却全部无效。
+
+        保守之处：只有【全部】响应都是 5xx 才判不可达。
+        只要有一个非 5xx 响应，就认为目标可达 ——
+        因为扫描过程中个别路径返回 500 是常见的，不能因此否定整次扫描。
+        """
+        return self.responses_ok - self.responses_server_error > 0
+
     @property
     def hit_count(self) -> int:
         """漏洞条目数。"""
@@ -240,6 +282,7 @@ async def run_request(
     poc_id: str = "",
     negative_control: bool = True,
     errors: list[str] | None = None,
+    reachability: list[int] | None = None,
 ) -> list[tuple[str, Response, Any]]:
     """执行一条 PoCRequest，返回所有命中的 ``(url, response, outcome)``。
 
@@ -248,6 +291,9 @@ async def run_request(
             错误会被记录进去而不是静默丢弃 ——
             「检测没结果」和「PoC 写错了」是两种完全不同的情况，
             用户必须能区分。这是踩过坑之后加上的设计。
+        reachability: 长度 1 的可变计数器（``[0]``），每拿到一个可用响应就 +1。
+            用 list 是为了在协程间共享可变状态 —— 每个 PoC 并发执行，
+            但都会往同一个目标发请求，所以"目标可达吗"这件事要汇总看。
     """
     hits: list[tuple[str, Response, Any]] = []
 
@@ -279,6 +325,14 @@ async def run_request(
                 errors.append(f"[{poc_id}] 请求异常 {url}: {resp.error}")
             continue
 
+        # 到这里说明真的读到了一个 HTTP 响应。
+        # 5xx 要单独计数 —— 代理挡下的 502 会让"目标可达"判断失真。
+        # 注意 Response 的字段名是 status（不是 httpx 的 status_code）。
+        if reachability is not None:
+            reachability[0] += 1
+            if 500 <= resp.status < 600:
+                reachability[1] += 1
+
         try:
             outcome = evaluate_matchers(
                 request.matchers, resp, condition=request.matchers_condition
@@ -304,6 +358,7 @@ async def run_poc(
     *,
     negative_control: bool = True,
     errors: list[str] | None = None,
+    reachability: list[int] | None = None,
 ) -> list[VulnResult]:
     """对单个目标执行一个 PoC。
 
@@ -313,6 +368,7 @@ async def run_poc(
         client: 共享 HTTP 客户端。
         negative_control: 是否启用负向对照校验。
         errors: 可选的错误收集器，用于把 PoC 自身的错误暴露给上层。
+        reachability: 可选的共享计数器，用于统计成功读到的响应数。
 
     Returns:
         命中的漏洞列表（可能为空，也可能多条 —— 一个 PoC 可以有多个 path）。
@@ -329,6 +385,7 @@ async def run_poc(
                 poc_id=poc.id,
                 negative_control=negative_control,
                 errors=errors,
+                reachability=reachability,
             )
         except PluginError as exc:
             logger.warning("poc_exec_failed poc=%s error=%s", poc.id, exc)
@@ -385,6 +442,10 @@ async def scan_target(
     started = time.monotonic()
     result = EngineResult(target=target, poc_count=len(pocs))
     semaphore = asyncio.Semaphore(concurrency)
+    # 共享计数器：[读到响应的总数, 其中 5xx 的数量]
+    # 所有 PoC 并发执行，但"目标是否可达"要汇总判断。
+    # 用 list 而不是两个 int，是为了让协程能修改同一个对象。
+    reachability = [0, 0]
 
     async def _run(poc: PoC) -> list[VulnResult]:
         async with semaphore:
@@ -398,6 +459,7 @@ async def scan_target(
                     client,
                     negative_control=negative_control,
                     errors=poc_errors,
+                    reachability=reachability,
                 )
             except Exception as exc:  # noqa: BLE001 - 单 PoC 失败不中断整体
                 logger.warning("poc_error poc=%s target=%s error=%s", poc.id, target, exc)
@@ -416,13 +478,49 @@ async def scan_target(
     result.vulns.sort(key=lambda v: (severity_order.get(v.severity, 9), -v.confidence))
 
     result.tested = len(pocs)
+    result.responses_ok = reachability[0]
+    result.responses_server_error = reachability[1]
     result.elapsed = time.monotonic() - started
 
+    # ------------------------------------------------------------------
+    # 可达性兜底：一个响应都没读到，必须显式报错
+    #
+    # 不加这一段的话，目标不可达时 hit_count=0，输出是「未发现漏洞」——
+    # 与「扫过了，确实没洞」在观感上完全一致。
+    # 实测踩到过：本机靶场进程被回收后，PoC 报告「命中 0、未发现漏洞」，
+    # 而真实原因是连不上，跟漏洞存不存在毫无关系。
+    #
+    # 宁可把这种情况当错误上报，也不要给出一份看起来干净的假报告。
+    # ------------------------------------------------------------------
+    if pocs and not result.target_reachable:
+        if result.responses_ok and result.responses_server_error:
+            message = (
+                f"目标 {target} 的所有响应都是 5xx（{result.responses_server_error}/"
+                f"{result.responses_ok}）—— 本次结果无效，不能据此判断「没有漏洞」。"
+                "常见原因：目标服务未启动、反向代理/HTTP 代理返回 502、"
+                "或上游应用崩溃。"
+            )
+        else:
+            message = (
+                f"目标 {target} 没有任何请求成功 —— "
+                "本次结果无效，不能据此判断「没有漏洞」。"
+                "请检查目标是否可达、端口是否正确、是否有代理/防火墙拦截。"
+            )
+        logger.error(
+            "target_unreachable target=%s responses_ok=%d server_error=%d",
+            target,
+            result.responses_ok,
+            result.responses_server_error,
+        )
+        result.errors.append(message)
+
     logger.info(
-        "target_scanned target=%s pocs=%d hits=%d elapsed=%.2fs",
+        "target_scanned target=%s pocs=%d hits=%d responses_ok=%d 5xx=%d elapsed=%.2fs",
         target,
         len(pocs),
         result.hit_count,
+        result.responses_ok,
+        result.responses_server_error,
         result.elapsed,
     )
     return result
@@ -437,6 +535,12 @@ def to_json(result: EngineResult) -> str:
             "hit_count": result.hit_count,
             "by_severity": result.by_severity(),
             "elapsed": round(result.elapsed, 3),
+            # 把可达性与错误也放进 JSON ——
+            # 自动化流水线（CI、报告生成）同样需要区分
+            # 「没扫到」和「扫了但没洞」，只给 hit_count 是不够的。
+            "target_reachable": result.target_reachable,
+            "responses_ok": result.responses_ok,
+            "errors": result.errors,
             "vulns": [v.to_dict() for v in result.vulns],
         },
         ensure_ascii=False,
