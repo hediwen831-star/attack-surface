@@ -23,7 +23,7 @@ pytest -q                # 必须全绿
 CI 会跑同样的检查。**本地不跑等于让 CI 替你发现低级错误** ——
 既浪费 CI 时间，也让提交历史里多一堆「修复 lint」的无意义 commit。
 
-> Windows 上如果 pytest 报临时目录权限错误，加 `--basetemp=.pytest_tmp`。
+Windows 上如果 pytest 报临时目录权限错误，加 `--basetemp=.pytest_tmp`。
 
 ---
 

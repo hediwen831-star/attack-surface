@@ -51,8 +51,10 @@ dev = [
 asp = "asp.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourname/attack-surface-platform"
-Issues = "https://github.com/yourname/attack-surface-platform/issues"
+Homepage = "https://github.com/hediwen831-star/attack-surface"
+Repository = "https://github.com/hediwen831-star/attack-surface"
+Issues = "https://github.com/hediwen831-star/attack-surface/issues"
+Changelog = "https://github.com/hediwen831-star/attack-surface/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["asp", "asp.core", "asp.discover", "asp.plugins", "asp.services", "asp.api"]
