@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+# setuptools>=77 是 PEP 639（SPDX license 表达式）的下限，
+# 下面 [project] 里的 license 用的是新写法。
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +10,8 @@ version = "0.1.0"
 description = "ASP — 外网攻击面自动化测绘与漏洞验证平台"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "hediwen" }]
 keywords = ["security", "asm", "easm", "recon", "subdomain", "vulnerability-scanner"]
 classifiers = [
@@ -57,10 +60,26 @@ Issues = "https://github.com/hediwen831-star/attack-surface/issues"
 Changelog = "https://github.com/hediwen831-star/attack-surface/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
-packages = ["asp", "asp.core", "asp.discover", "asp.plugins", "asp.services", "asp.api"]
+# 显式列出所有包。pocs / rules / api/static 里只有数据文件、没有 Python 代码，
+# 但同样要声明成包 —— 否则 setuptools 打包时会对这三个目录各报一条
+# "Package '...' is absent from the `packages` configuration" 警告。
+packages = [
+  "asp",
+  "asp.core",
+  "asp.discover",
+  "asp.plugins",
+  "asp.services",
+  "asp.api",
+  "asp.api.static",
+  "asp.pocs",
+  "asp.rules",
+]
 
+# 数据文件按所属包声明。`**/` 一并覆盖，便于今后在子目录里追加规则。
 [tool.setuptools.package-data]
-asp = ["pocs/*.yaml", "rules/*.yaml", "api/static/*.html"]
+"asp.pocs" = ["*.yaml", "**/*.yaml"]
+"asp.rules" = ["*.yaml", "**/*.yaml"]
+"asp.api.static" = ["*.html"]
 
 # ---------------------------------------------------------------- 工具配置
 

@@ -34,6 +34,20 @@
   `init_db` 的 DDL 每请求执行一次。现改为按进程缓存 Engine，并在 FastAPI 的
   `lifespan` 关闭钩子中释放。
 
+- `pyproject.toml` 里的项目地址从建项起一直是占位符
+  （`https://github.com/yourname/attack-surface-platform`），与实际仓库不符，
+  项目页会显示无效链接。现改为真实地址，并补充 `Repository` 与 `Changelog`。
+
+- 构建 wheel 时输出三条 `Package '...' is absent from the packages configuration`
+  警告，分别指向 `asp.pocs`、`asp.rules` 与 `asp.api.static`。下载 CI 产物核对后
+  确认，这三个目录下的 YAML 与 HTML 实际都已打进 wheel —— `package-data` 中写的
+  相对路径起了作用，警告并不代表文件缺失。
+
+  真正的问题是数据目录挂在另一个包的 `package-data` 下，能否随包分发取决于
+  setuptools 对未声明子目录的处理方式，不是一条明确的规则。现为三个目录补充
+  `__init__.py` 并加入 `packages` 列表，`package-data` 改为按所属包声明，
+  警告随之消失。
+
 ### 变更
 
 - `asp/cli.py` 不再被排除在覆盖率统计之外。该模块现由 31 条断言覆盖，其中包含
@@ -43,6 +57,11 @@
   由 49% 提升至 98%。
 - CI 增加一项 JSON 契约冒烟检查，按使用者的实际调用方式执行 CLI，并断言输出可
   解析、退出码正确。
+- 许可证元数据改用 SPDX 表达式（`license = "MIT"`）替代已废弃的
+  `license = { text = "MIT" }`，并显式声明 `license-files`。构建后端下限相应由
+  `setuptools>=68` 提高到 `>=77` —— 这是该写法要求的最低版本。构建产物中的元数据
+  版本为 2.4，许可证字段写作 `License-Expression: MIT`，`LICENSE` 被收进
+  `dist-info/licenses/`。
 
 ## [0.1.0] - 2026-09-18
 
