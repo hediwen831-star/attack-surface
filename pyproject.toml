@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asp"
-version = "0.1.0"
+version = "0.1.1"
 description = "ASP — 外网攻击面自动化测绘与漏洞验证平台"
 readme = "README.md"
 requires-python = ">=3.11"
