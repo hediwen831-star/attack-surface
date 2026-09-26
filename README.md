@@ -39,6 +39,10 @@ Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML Po
 上面这张是拿自带靶场（[vulnlab](https://github.com/hediwen831-star/vulnlab)）
 实测跑出来的真实数据，不是占位图。
 
+> 图为 **Windows** 环境下跑出的结果（25 处：11 严重 / 12 高危 / 2 中危）。
+> Linux 下同一靶场能多命中 XXE 场景的 2 处，合计 27 处（13 严重）——
+> 差异根因见下文「与 VulnLab 靶场联动」里的跨平台说明。
+
 ## 架构总览
 
 ```mermaid
@@ -550,7 +554,7 @@ high      vulnlab-sqli-low-union              .../sqli/low.php?id=-1%20UNION... 
 
 > ⚠️ 「27 处命中 / 13 个场景」是靶场跑在 **Linux** 上的结果。
 > Windows 下 `php -S` 的 CWD 语义与 Linux 不同，靶场的 XXE 场景会失效，
-> 命中数降为 24（12 个场景）。详见 VulnLab 仓库的 `tests/verify_lab.py` 说明。
+> 命中数降为 25（12 个场景）。详见 VulnLab 仓库的 `tests/verify_lab.py` 说明。
 
 ### 目标不可达不会被报成「没有漏洞」
 
