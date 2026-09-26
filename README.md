@@ -534,7 +534,7 @@ python -m asp.cli poc run http://127.0.0.1:8080 --dir ../vulnlab/pocs
 
 ```
 目标: http://127.0.0.1:8080
-执行 PoC: 18   耗时: 3.72s
+执行 PoC: 19   耗时: 3.72s
 命中: 27
 
 critical  vulnlab-php-unserialize-pop-chain   .../unserialize/low.php      1.00
@@ -543,8 +543,14 @@ high      vulnlab-sqli-low-union              .../sqli/low.php?id=-1%20UNION... 
 …
 ```
 
-12 个场景全部命中（合计 27 处），靶场的 `high` 档（已修复）是天然的
+13 个场景全部命中（合计 27 处），靶场的 `high` 档（已修复）是天然的
 **误报诱饵** —— 引擎若在这里报漏洞，说明判定逻辑有问题。
+
+19 个 PoC = 靶场的 14 个 + 本引擎自带的 5 个（`--dir` 是**追加**目录，不是替换）。
+
+> ⚠️ 「27 处命中 / 13 个场景」是靶场跑在 **Linux** 上的结果。
+> Windows 下 `php -S` 的 CWD 语义与 Linux 不同，靶场的 XXE 场景会失效，
+> 命中数降为 24（12 个场景）。详见 VulnLab 仓库的 `tests/verify_lab.py` 说明。
 
 ### 目标不可达不会被报成「没有漏洞」
 
