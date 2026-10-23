@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-"""资产层真值评测：泛解析条件下的子域名枚举。
+"""资产层评测：泛解析条件下的子域名枚举。
 
-**为什么要单独做资产层评测**
+应用层评测在 vulnlab，这里测的是「哪些资产是活的」。泛解析会让枚举器
+把编造的子域名全记成资产，后面所有检测都建立在假目标上。
 
-应用层评测（vulnlab）回答的是「这个路径有没有漏洞」。
-但真实扫描的第一步是「哪些资产是活的」—— 泛解析恰恰在这一步制造误报：
-任意编造的子域名都解析成功，扫描器把它们全记成资产，后面每一条检测
-都建立在假目标上。这类误报无法靠改 matcher 解决，必须换检测范式。
-
-本脚本用真实的 `detect_wildcard` / `BruteForceSource`，只把 DNS 解析替换成
-按用例定义作答的假解析器 —— 逻辑走的是生产代码，网络是假的，结果可复现。
-
-用法：
-    python benchmark/asset/evaluate_asset.py
-    python benchmark/asset/evaluate_asset.py --json
+用例在 cases.yaml，跑的是 detect_wildcard 和 BruteForceSource.fetch，
+只把 DNS 解析换成按用例作答的假解析器，所以离线可跑、结果可复现。
 """
 
 from __future__ import annotations
