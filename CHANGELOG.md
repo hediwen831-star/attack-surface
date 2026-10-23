@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **资产层真值评测（`benchmark/asset/`）**：把「泛解析导致资产发现误报」变成可量的数。
+
+  6 个 zone 用例，全部走生产代码（`detect_wildcard` + `BruteForceSource.fetch`），
+  只把 DNS 解析替换成按用例作答的假解析器。覆盖六种失败模式：无泛解析、全泛解析、
+  泛解析与真实记录混用、CDN 同 IP、真实域名多 IP、运营商劫持单点误判。
+
+  当前结果：泛解析判定 6/6，真实资产 10 个误杀 1 个（TPR 90%），噪音 12 个漏过滤 0 个（FPR 0%）。
+  那 1 个误杀是 CDN 同 IP 场景，属算法已知边界，用例以 `known_limitation: true`
+  固定下来，不混进指标假装通过。
+
+  配套 `tests/test_asset_benchmark.py`，离线可跑，纳入现有测试套件（355 → 357）。
+
+- **研判层基线（`benchmark/llm/`）**：`asp triage --self-test` 在内置 6 条标注样本上
+  的可复现结果：准确率 83.3%、误报召回 3/3、真漏洞识别 2/3（1 条判为 uncertain）。
+  接真实模型只需设 `ASP_LLM_API_KEY` / `ASP_LLM_BASE_URL` / `ASP_LLM_MODEL`。
+
 ## [0.1.1] - 2026-09-23
 
 ### 修复

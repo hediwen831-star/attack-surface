@@ -1,0 +1,99 @@
+# 资产层真值用例：泛解析条件下的子域名枚举
+#
+# 每个 zone 是一个「假想的 DNS 世界」：给定 records 与 wildcard，
+# 枚举器应当保留哪些 label、过滤哪些 label 是有标准答案的。
+#
+# 字段：
+#   records   —— 真实存在的记录。label → IP 列表
+#   wildcard  —— 泛解析指向的 IP。null 表示没有泛解析
+#   wordlist  —— 枚举字典；只有出现在这里的 label 才会被查询
+#   expect.alive    —— 期望保留的 label（真实资产）
+#   expect.filtered —— 期望被过滤掉的 label（泛解析噪音）
+#   trap      —— 这一例专门考察的失败模式
+#
+# 指标口径（资产层）：
+#   漏杀 FP = 噪音 label 未被过滤        过杀 FN = 真实资产被过滤
+#   TPR = 保留的真实资产 / 全部真实资产   FPR = 未过滤的噪音 / 全部噪音
+
+cases:
+  - id: clean-no-wildcard
+    description: 普通域名，无泛解析。枚举结果应当全部保留。
+    records:
+      www: ["1.2.3.4"]
+      mail: ["1.2.3.5"]
+      api: ["1.2.3.6"]
+    wildcard: null
+    wordlist: [www, mail, api, dev, test, staging]
+    expect:
+      wildcard: false
+      alive: [www, mail, api]
+      filtered: [dev, test, staging]
+    trap: 基线误判 —— 把「解析失败」当成泛解析过滤条件时会全丢
+
+  - id: wildcard-all
+    description: 泛解析指向同一 IP，且没有任何真实记录。
+    records: {}
+    wildcard: ["9.9.9.9"]
+    wordlist: [www, mail, api, dev, test, staging]
+    expect:
+      wildcard: true
+      alive: []
+      filtered: [www, mail, api, dev, test, staging]
+    trap: 典型的「所有子域名都活着」——不建基线就会全量误报
+
+  - id: wildcard-mixed
+    description: 有泛解析，同时存在指向不同 IP 的真实记录。
+    records:
+      www: ["1.2.3.4"]
+      mail: ["1.2.3.5"]
+    wildcard: ["9.9.9.9"]
+    wordlist: [www, mail, api, dev, test]
+    expect:
+      wildcard: true
+      alive: [www, mail]
+      filtered: [api, dev, test]
+    trap: 一刀切过滤会连真实资产一起丢
+
+  - id: wildcard-cdn-same-ip
+    description: 真实记录与泛解析指向同一 IP（CDN 场景）。
+    records:
+      www: ["9.9.9.9"]
+    wildcard: ["9.9.9.9"]
+    wordlist: [www, api, dev, test]
+    expect:
+      wildcard: true
+      # 正确答案是保留 www（它是真实域名），纯 IP 比对做不到 ——
+      # 所以这一例注定失败，用来把当前算法的边界固定下来。
+      alive: [www]
+      filtered: [api, dev, test]
+    known_limitation: true
+    known_limitation_note: 纯 IP 比对无法区分「CDN 上的真实域名」与「泛解析噪音」，这一例会过杀
+    trap: CDN 过杀 —— 这是当前算法写明的局限，用例把它固定下来，便于后续用 HTTP 响应比对修正
+
+  - id: wildcard-real-multi-ip
+    description: 真实子域名解析出「泛解析 IP + 独立 IP」两个地址。
+    records:
+      www: ["9.9.9.9", "1.2.3.4"]
+    wildcard: ["9.9.9.9"]
+    wordlist: [www, api, dev, test]
+    expect:
+      wildcard: true
+      alive: [www]
+      filtered: [api, dev, test]
+    trap: 用「是否命中泛解析 IP」做判据会误杀；必须用「IP 集合是否为基线子集」
+
+  - id: dns-hijack-single-hit
+    description: 无泛解析，但运营商把个别不存在的域名劫持到广告页。
+    records:
+      www: ["1.2.3.4"]
+      api: ["1.2.3.5"]
+    wildcard: null
+    hijack:
+      labels: [ads-only]
+      ips: ["10.0.0.99"]
+    wordlist: [www, api, ads-only]
+    expect:
+      wildcard: false
+      alive: [www, api, ads-only]
+      filtered: []
+    trap: 单个随机域名解析成功不等于泛解析；阈值定成 1 会产生误判
