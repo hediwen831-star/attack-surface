@@ -140,6 +140,7 @@ class AsyncHttpClient:
         user_agent: str = "Mozilla/5.0 (compatible; ASP/0.1)",
         follow_redirects: bool = False,
         max_body: int = 2 * 1024 * 1024,
+        trust_env: bool = False,
     ) -> None:
         """
         Args:
@@ -156,6 +157,7 @@ class AsyncHttpClient:
         self.timeout = timeout
         self.retries = retries
         self.max_body = max_body
+        self.trust_env = trust_env
         self._semaphore = asyncio.Semaphore(concurrency)
         self._limiter = RateLimiter(rate_limit)
         self._client = httpx.AsyncClient(
@@ -169,6 +171,7 @@ class AsyncHttpClient:
                 "Connection": "close",
             },
             limits=httpx.Limits(max_connections=concurrency, max_keepalive_connections=0),
+            trust_env=trust_env,
         )
 
     # -------------------------------------------------------------- 上下文

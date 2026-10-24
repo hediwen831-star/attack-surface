@@ -55,20 +55,54 @@ cases:
     trap: 一刀切过滤会连真实资产一起丢
 
   - id: wildcard-cdn-same-ip
-    description: 真实记录与泛解析指向同一 IP（CDN 场景）。
+    description: 真实记录与泛解析指向同一 IP（CDN 场景），但页面内容不同。
     records:
       www: ["9.9.9.9"]
     wildcard: ["9.9.9.9"]
     wordlist: [www, api, dev, test]
+    http:
+      default:
+        status: 200
+        body: "<html><body>CDN 默认页 trace 5f3a9c1d2e4b6a8f</body></html>"
+      hosts:
+        www:
+          status: 200
+          body: "<html><body><h1>某某科技官网</h1><nav>产品 方案 关于我们</nav></body></html>"
     expect:
       wildcard: true
-      # 正确答案是保留 www（它是真实域名），纯 IP 比对做不到 ——
-      # 所以这一例注定失败，用来把当前算法的边界固定下来。
       alive: [www]
       filtered: [api, dev, test]
+    trap: CDN 过杀。纯 IP 比对会误杀，HTTP 指纹不同则保留，这一例验证二次判定生效
+
+  - id: wildcard-cdn-uniform-page
+    description: 同 IP 且所有主机返回同一张默认页，说明真实记录也是泛解析的一部分。
+    records:
+      www: ["9.9.9.9"]
+    wildcard: ["9.9.9.9"]
+    wordlist: [www, api, dev]
+    http:
+      default:
+        status: 200
+        body: "<html><body>CDN 默认页 trace 5f3a9c1d2e4b6a8f</body></html>"
+    expect:
+      wildcard: true
+      alive: []
+      filtered: [www, api, dev]
+    trap: 反向保护。HTTP 判定不能把「长得一样」的噪音也救回来
+
+  - id: wildcard-cdn-http-down
+    description: 同 IP，但 HTTP 探测不可用（端口关闭 / 超时）。
+    records:
+      www: ["9.9.9.9"]
+    wildcard: ["9.9.9.9"]
+    wordlist: [www, api]
+    expect:
+      wildcard: true
+      alive: [www]
+      filtered: [api]
     known_limitation: true
-    known_limitation_note: 纯 IP 比对无法区分「CDN 上的真实域名」与「泛解析噪音」，这一例会过杀
-    trap: CDN 过杀 —— 这是当前算法写明的局限，用例把它固定下来，便于后续用 HTTP 响应比对修正
+    known_limitation_note: 拿不到页面时退回纯 IP 比对，CDN 上的真实域名会被误杀
+    trap: 降级行为。探测失败时宁可少留；这条局限要等被动指纹（证书 SAN）补上才能解决
 
   - id: wildcard-real-multi-ip
     description: 真实子域名解析出「泛解析 IP + 独立 IP」两个地址。

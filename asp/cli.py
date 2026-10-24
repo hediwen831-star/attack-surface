@@ -271,6 +271,7 @@ def cmd_poc_run(args: argparse.Namespace, config: Config) -> int:
             retries=config.http.retries,
             verify_ssl=config.http.verify_ssl,
             user_agent=config.http.user_agent,
+            trust_env=config.http.trust_env,
         ) as client:
             return await scan_target(
                 args.target,

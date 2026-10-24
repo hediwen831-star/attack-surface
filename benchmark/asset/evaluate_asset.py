@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT))
 import asp.discover.bruteforce as brute_mod  # noqa: E402
 from asp.config import Config  # noqa: E402
 from asp.discover.bruteforce import BruteForceSource  # noqa: E402
+from asp.discover.wildcard_http import Fingerprint, normalize_body  # noqa: E402
 
 CASES = Path(__file__).resolve().parent / "cases.yaml"
 
@@ -61,17 +62,46 @@ def make_resolver(case: dict):
     return resolve
 
 
+def make_fingerprint_fetcher(case: dict):
+    """按用例的 http 配置返回假指纹；没配置就当作探测不可用。"""
+    http = case.get("http")
+    if not http:
+        async def unavailable(client, host, timeout=5.0):
+            return Fingerprint(status=0, sample="")
+
+        return unavailable
+
+    default = http.get("default") or {}
+    hosts = http.get("hosts") or {}
+
+    async def fetch(client, host, timeout=5.0):
+        label = host.split(".")[0]
+        spec = hosts.get(label, default)
+        body = spec.get("body", "")
+        return Fingerprint(
+            status=spec.get("status", 200),
+            sample=normalize_body(body),
+            server=spec.get("server", ""),
+        )
+
+    return fetch
+
+
 async def run_case(case: dict) -> dict:
     """跑一个用例：走生产代码（detect_wildcard + BruteForceSource.fetch），只替换 DNS。"""
     zone = f"{case['id']}.test"
     resolver = make_resolver({**case, "zone": zone})
 
     original = brute_mod.resolve_host
+    original_fp = brute_mod.fetch_fingerprint
     brute_mod.resolve_host = resolver
+    brute_mod.fetch_fingerprint = make_fingerprint_fetcher(case)
     try:
         config = Config()
         config.discover.brute_concurrency = 8
-        source = BruteForceSource(config)
+        # 指纹抓取已被替换成假实现，这里只需要一个非 None 的占位客户端，
+        # 否则 BruteForceSource 会认为没开 HTTP 判定。
+        source = BruteForceSource(config, client=object())
         source.words = list(case.get("wordlist") or [])
         assets = await source.fetch(zone)
         kept = [a.value[: -len(zone) - 1] for a in assets]
@@ -79,6 +109,7 @@ async def run_case(case: dict) -> dict:
         wildcard_ips = source.wildcard_ips
     finally:
         brute_mod.resolve_host = original
+        brute_mod.fetch_fingerprint = original_fp
 
     expect = case["expect"]
     alive_expected = set(expect.get("alive") or [])

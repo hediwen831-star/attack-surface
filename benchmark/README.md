@@ -17,15 +17,24 @@ python benchmark/asset/evaluate_asset.py
 跑的是生产代码（`detect_wildcard` + `BruteForceSource.fetch`），只把 DNS 解析
 换成按用例作答的假解析器。结果写到 `asset/results/`。
 
-当前结果：6 个用例，泛解析判定 6/6，真实资产 10 个误杀 1 个（TPR 90%），
-噪音 12 个漏过滤 0 个（FPR 0%）。
+当前结果：8 个用例，泛解析判定 8/8，真实资产 11 个误杀 1 个（TPR 90.9%），
+噪音 14 个漏过滤 0 个（FPR 0%）。
 
-那 1 个误杀是 `wildcard-cdn-same-ip`：真实域名和泛解析指向同一 IP（CDN 场景），
-纯 IP 比对分不出来。用例把它标成 `known_limitation: true`，不混进指标假装通过 ——
-这条要等「HTTP 响应体比对」那层补上才能修。
+CDN 同 IP 的过杀已经修掉：`BruteForceSource` 在 IP 落在泛解析基线时，
+会再抓一次候选和随机标签的 HTTP 指纹，页面不同就保留（`wildcard-cdn-same-ip` 通过）。
+反向也做了保护：所有主机返回同一张默认页时照样过滤（`wildcard-cdn-uniform-page` 通过），
+避免把噪音救回来。
 
-六个用例分别对应六种失败模式：无泛解析、全泛解析、泛解析+真实记录混用、
-CDN 同 IP 过杀、真实域名多 IP（必须用子集判断而非命中判断）、运营商劫持单点误判。
+还剩 1 个误杀是 `wildcard-cdn-http-down`：HTTP 探测不可用（端口关闭/超时）时
+退回纯 IP 比对，同 IP 的真实域名会被误杀。这是刻意选的降级方向——
+宁可少留，也不把整片噪音放进来。要彻底解决得靠被动指纹（证书 SAN）。
+
+八个用例对应八种情况：无泛解析、全泛解析、泛解析+真实记录混用、CDN 同 IP（页面不同）、
+CDN 同 IP（页面相同）、CDN 但 HTTP 不可用、真实域名多 IP、运营商劫持单点误判。
+
+顺带修了一个本机才暴露的问题：HTTP 客户端默认会继承 `HTTP_PROXY`，连不上的端口
+会返回代理的 502，看起来像「有响应」。现在 `http.trust_env` 默认关闭，
+要挂 Burp 时显式打开。
 
 ## 研判层：LLM 降噪
 

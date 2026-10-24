@@ -34,13 +34,24 @@ def test_asset_cases_offline() -> None:
     assert summary["FPR"] == 0.0
 
 
-def test_cdn_known_limitation_is_recorded() -> None:
-    """CDN 同 IP 场景目前一定过杀，用例把这件事固定下来。"""
+def test_cdn_same_ip_rescued_by_http() -> None:
+    """同 IP 但页面不同：HTTP 二次判定应把真实域名留下。"""
     import asyncio
 
     results = asyncio.run(run_all())
     cdn = next(r for r in results if r["id"] == "wildcard-cdn-same-ip")
 
-    assert cdn["known_limitation"] is True
-    assert cdn["over_filtered"] == ["www"]
-    assert not cdn["pass"]
+    assert cdn["pass"]
+    assert cdn["alive_actual"] == ["www"]
+
+
+def test_cdn_http_down_is_known_limitation() -> None:
+    """HTTP 探测不可用时退回纯 IP 比对，过杀属已知局限。"""
+    import asyncio
+
+    results = asyncio.run(run_all())
+    down = next(r for r in results if r["id"] == "wildcard-cdn-http-down")
+
+    assert down["known_limitation"] is True
+    assert down["over_filtered"] == ["www"]
+    assert not down["pass"]

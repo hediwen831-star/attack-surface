@@ -144,6 +144,7 @@ async def collect_subdomains(
         retries=config.http.retries,
         verify_ssl=config.http.verify_ssl,
         user_agent=config.http.user_agent,
+        trust_env=config.http.trust_env,
     ) as client:
         built = build_sources(source_names, config, client, wordlist=wordlist)
         if not built:

@@ -254,6 +254,7 @@ async def scan_and_fingerprint(
             retries=config.http.retries,
             verify_ssl=False,      # 测绘场景大量自签名证书，必须关闭校验
             user_agent=config.http.user_agent,
+            trust_env=config.http.trust_env,
         ) as client:
             results = await asyncio.gather(
                 *(

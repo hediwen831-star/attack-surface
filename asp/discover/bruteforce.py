@@ -40,6 +40,7 @@ from pathlib import Path
 
 from ..logger import get_logger
 from .base import DiscoveredAsset, Source
+from .wildcard_http import fetch_fingerprint, looks_like_wildcard
 
 logger = get_logger("discover.bruteforce")
 
@@ -232,21 +233,30 @@ class BruteForceSource(Source):
         wordlist: str | Path | None = None,
         concurrency: int | None = None,
         extra_ips: set[str] | None = None,
+        http_verify: bool | None = None,
     ) -> None:
         """
         Args:
             config: 全局配置。
-            client: 未使用（DNS 查询不走 HTTP）。保留是为了接口统一。
+            client: HTTP 客户端。只有开了 ``http_verify`` 才会用到。
             wordlist: 字典路径，None 则用内置字典。
             concurrency: 并发数，None 则取配置里的 ``brute_concurrency``。
-            extra_ips: 额外的泛解析 IP 集合（通常来自更强的检测方法，
-                如 HTTP 响应体比对），与内置检测结果合并。
+            extra_ips: 额外的泛解析 IP 集合，与内置检测结果合并。
+            http_verify: 对「IP 落在泛解析基线」的候选再抓一次 HTTP 指纹。
+                默认读配置 ``discover.wildcard_http_verify``。关掉就退回纯 IP 比对。
         """
         super().__init__(config, client)
         self.words = load_wordlist(wordlist)
         self.concurrency = concurrency or config.discover.brute_concurrency
         self.extra_ips = extra_ips or set()
         self.wildcard_ips: set[str] = set()
+        self.http_verify = (
+            getattr(config.discover, "wildcard_http_verify", True)
+            if http_verify is None
+            else http_verify
+        )
+        self._baseline_fps: list = []
+        self._baseline_lock = asyncio.Lock()
 
     async def fetch(self, domain: str) -> list[DiscoveredAsset]:
         """先做泛解析基线检测，再爆破。"""
@@ -283,6 +293,19 @@ class BruteForceSource(Source):
             # 若域名解析出 {泛解析IP, 真实IP} 两个地址，说明它同时有真实记录，
             # 应该保留（宁可多留，不可漏掉真实资产）。
             if self.wildcard_ips and ips.issubset(self.wildcard_ips):
+                # CDN 场景：真实域名和泛解析同 IP，纯 IP 比分会过杀。
+                # 再看一次页面：和随机标签的默认页明显不同就留下。
+                if await self._is_real_asset(domain, host):
+                    return DiscoveredAsset(
+                        value=host,
+                        source=self.name,
+                        type="domain",
+                        resolved_ip=sorted(ips)[0],
+                        metadata={
+                            "all_ips": ",".join(sorted(ips)),
+                            "http_verified": "1",
+                        },
+                    )
                 return None
 
             return DiscoveredAsset(
@@ -305,6 +328,41 @@ class BruteForceSource(Source):
             filtered,
         )
         return alive
+
+
+    async def _baseline_fingerprints(self, domain: str) -> list:
+        """随机标签的页面指纹，作为「泛解析默认页」的参照。只抓一次。"""
+        if self._baseline_fps or self.client is None:
+            return self._baseline_fps
+        async with self._baseline_lock:
+            if self._baseline_fps:
+                return self._baseline_fps
+            hosts = [f"{_random_label()}.{domain}" for _ in range(2)]
+            self._baseline_fps = [
+                await fetch_fingerprint(self.client, host) for host in hosts
+            ]
+            logger.debug(
+                "wildcard_http_baseline domain=%s fingerprints=%d",
+                domain,
+                len(self._baseline_fps),
+            )
+        return self._baseline_fps
+
+    async def _is_real_asset(self, domain: str, host: str) -> bool:
+        """HTTP 二次判定：True 表示这是真站点，不该被过滤。
+
+        探测失败时返回 False，保持原有过滤行为 —— 宁可少留，
+        也不要把整片泛解析噪音放进来。
+        """
+        if not self.http_verify or self.client is None:
+            return False
+        baselines = await self._baseline_fingerprints(domain)
+        if not baselines or all(fp.empty for fp in baselines):
+            return False
+        candidate = await fetch_fingerprint(self.client, host)
+        if candidate.empty:
+            return False
+        return not looks_like_wildcard(candidate, baselines)
 
 
 __all__ = [

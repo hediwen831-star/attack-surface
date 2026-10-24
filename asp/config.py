@@ -44,6 +44,14 @@ class HttpConfig:
     user_agent: str = "Mozilla/5.0 (compatible; ASP/0.1; +https://github.com/)"
     """默认 UA。伪装成常见浏览器可降低被 WAF 直接拦截的概率。"""
 
+    trust_env: bool = False
+    """是否继承环境变量里的 HTTP(S)_PROXY。
+
+    默认关闭：扫描器被系统代理劫持时，代理返回的 502/错误页会和真实响应混在一起，
+    既污染判定又难排查（本机实测：关掉的端口返回 502 而不是连接失败）。
+    需要走代理（例如挂 Burp）时显式打开。
+    """
+
 
 @dataclass
 class DiscoverConfig:
@@ -63,6 +71,13 @@ class DiscoverConfig:
 
     brute_concurrency: int = 200
     """DNS 爆破并发数 —— DNS 查询轻量，可以比其他源高。"""
+
+    wildcard_http_verify: bool = True
+    """对落在泛解析 IP 基线里的候选，再抓一次 HTTP 指纹做二次判定。
+
+    CDN 场景下真实域名与泛解析指向同一 IP，纯 IP 比对会误杀；
+    打开后能区别对待，代价是每个可疑候选多一到两次请求。关掉即退回纯 IP 比对。
+    """
 
     # ------------------------------------------------------------ 端口扫描
 
