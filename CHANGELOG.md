@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-24
+
 ### 修复
 
 - 报告里的「消失资产」永远为空。diff 用合并后的全量资产去比上一次任务，
@@ -203,6 +205,7 @@
 - 内置指纹规则改为按相对包目录解析，而非相对工作目录。按工作目录解析时，从项目根
   目录之外执行会导致规则数静默降为 0，且没有任何报错。
 
-[Unreleased]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/hediwen831-star/attack-surface/releases/tag/v0.1.0
