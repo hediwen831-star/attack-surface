@@ -4,7 +4,7 @@
 
 ```bash
 pip install -e ".[dev]"
-pytest                                   # 365 个用例，全部离线
+pytest                                   # 433 个用例，全部离线
 pytest --cov=asp --cov-report=term-missing
 ruff check asp tests
 ```
