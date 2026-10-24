@@ -43,6 +43,7 @@ api = [
 dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.23",
+  "pytest-cov>=5.0",
   "ruff>=0.5",
   "mmh3>=4.0",
   "fastapi>=0.110,<1.0",
@@ -101,3 +102,21 @@ ignore = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-q --strict-markers"
+
+[tool.coverage.run]
+source = ["asp"]
+branch = true
+omit = [
+  "asp/api/static/*",
+]
+
+[tool.coverage.report]
+# 只报没被覆盖的行，输出才看得完
+skip_covered = true
+show_missing = true
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]

@@ -43,7 +43,15 @@ jobs:
         run: ruff check asp tests
 
       - name: Run tests
-        run: pytest -v
+        # 覆盖率随测试一起跑：覆盖率下降和测试失败一样，都是回归信号。
+        run: pytest -v --cov=asp --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
 
       - name: Smoke test CLI
         run: |
