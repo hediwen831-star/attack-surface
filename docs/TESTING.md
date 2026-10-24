@@ -23,21 +23,20 @@ CI 里还有两个 smoke：CLI 冒烟（`--version` / `poc list` / `--help`）�
 
 ## 覆盖率
 
-用 `branch = true`，口径是分支覆盖率，不是行覆盖率。当前基线（2026-10-24）：
+用 `branch = true`，口径是分支覆盖率，不是行覆盖率。基线（2026-10-24，补齐服务层后）：
 
-| 模块 | 覆盖率 |
-|---|---:|
-| `asp/services/subdomain.py` | 28% |
-| `asp/services/host.py` | 39% |
-| `asp/cli.py` | 49% |
-| `asp/discover/portscan.py` | 59% |
-| `asp/report.py` | 67% |
-| 整体 | 72% |
+| 模块 | 起点 | 当前 |
+|---|---:|---:|
+| `asp/services/subdomain.py` | 28% | 98% |
+| `asp/services/host.py` | 39% | 99% |
+| `asp/cli.py` | 49% | 49% |
+| `asp/discover/portscan.py` | 59% | 59% |
+| `asp/report.py` | 67% | 67% |
+| 整体 | 72% | 78% |
 
-目标：上面五个模块各 ≥85%，整体 ≥80%。缺的集中在「编排与输出」这一层——
-它们没有被测，是因为外部依赖直接写在函数里（DNS 解析、socket、HTTP client），
-单测没法在不起网络的前提下走到那些分支。补测试的第一步是加注入点，
-不是写一堆 mock 去骗覆盖率。
+目标：五个模块各 ≥85%，整体 ≥80%。服务层这两个模块原来低，原因是外部依赖
+直接写在函数体里（DNS 解析、socket、HTTP client）。测试用 monkeypatch 替换依赖，
+产品代码只加了 `trust_env` 这一处参数，没有为了可测性改结构。
 
 ## 写用例的三条规矩
 
