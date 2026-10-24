@@ -30,11 +30,12 @@ CI 里还有两个 smoke：CLI 冒烟（`--version` / `poc list` / `--help`）�
 | `asp/services/subdomain.py` | 28% | 98% |
 | `asp/services/host.py` | 39% | 99% |
 | `asp/cli.py` | 49% | 91% |
-| `asp/discover/portscan.py` | 59% | 59% |
-| `asp/report.py` | 67% | 67% |
-| 整体 | 72% | 84% |
+| `asp/discover/portscan.py` | 59% | 95% |
+| `asp/report.py` | 67% | 92% |
+| 整体 | 72% | 88% |
 
-目标：五个模块各 ≥85%，整体 ≥80%。服务层原来低，原因是外部依赖直接写在
+五个模块均已 ≥85%，整体 88%。CI 用 `--cov-fail-under=85` 兜底，
+覆盖率掉到 85 以下会直接判 CI 失败。服务层原来低，原因是外部依赖直接写在
 函数体里（DNS 解析、socket、HTTP client）；CLI 层低是因为只测了 `poc run`。
 补法都是 monkeypatch 替换依赖，不改产品结构。
 

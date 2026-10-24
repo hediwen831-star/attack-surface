@@ -44,7 +44,7 @@ jobs:
 
       - name: Run tests
         # 覆盖率随测试一起跑：覆盖率下降和测试失败一样，都是回归信号。
-        run: pytest -v --cov=asp --cov-report=term-missing --cov-report=xml
+        run: pytest -v --cov=asp --cov-report=term-missing --cov-report=xml --cov-fail-under=85
 
       - name: Upload coverage
         if: matrix.python-version == '3.12'

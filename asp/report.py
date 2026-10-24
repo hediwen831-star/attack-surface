@@ -184,7 +184,10 @@ def load_target_report(config: Config, target: str, *, task_limit: int = 2) -> d
                     select(Asset.value).where(Asset.task_id == tasks[1].id)
                 ).scalars().all()
             )
-            current_values = {a.value for a in assets}
+            # 必须用「最近一次任务的资产」去比，不能用合并后的 assets：
+            # 合并集合包含历史任务的全部资产，previous 必然是它的子集，
+            # 于是 removed 永远为空 —— 报告里的「消失资产」形同虚设。
+            current_values = {a.value for a in raw_assets if a.task_id == current.id}
             diff["added"] = sorted(current_values - previous_values)
             diff["removed"] = sorted(previous_values - current_values)
 
