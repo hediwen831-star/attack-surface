@@ -29,14 +29,18 @@ CI 里还有两个 smoke：CLI 冒烟（`--version` / `poc list` / `--help`）�
 |---|---:|---:|
 | `asp/services/subdomain.py` | 28% | 98% |
 | `asp/services/host.py` | 39% | 99% |
-| `asp/cli.py` | 49% | 49% |
+| `asp/cli.py` | 49% | 91% |
 | `asp/discover/portscan.py` | 59% | 59% |
 | `asp/report.py` | 67% | 67% |
-| 整体 | 72% | 78% |
+| 整体 | 72% | 84% |
 
-目标：五个模块各 ≥85%，整体 ≥80%。服务层这两个模块原来低，原因是外部依赖
-直接写在函数体里（DNS 解析、socket、HTTP client）。测试用 monkeypatch 替换依赖，
-产品代码只加了 `trust_env` 这一处参数，没有为了可测性改结构。
+目标：五个模块各 ≥85%，整体 ≥80%。服务层原来低，原因是外部依赖直接写在
+函数体里（DNS 解析、socket、HTTP client）；CLI 层低是因为只测了 `poc run`。
+补法都是 monkeypatch 替换依赖，不改产品结构。
+
+补 CLI 覆盖时抓到两个真 bug：`subdomain --json` 和 `portscan --json`
+不带 `-o` 时不打印任何东西。和历史上 `poc run --json` 的缺陷同源，
+已修并加了用例。
 
 ## 写用例的三条规矩
 

@@ -135,6 +135,10 @@ def cmd_subdomain(args: argparse.Namespace, config: Config) -> int:
             ],
         }
         text = json.dumps(payload, ensure_ascii=False, indent=2)
+        # 必须真的打印。这里和 poc run 曾经是同一个坑：
+        # 只把 JSON 赋给 text，不给 -o 时终端什么也没有，
+        # 管道下游的 jq 拿到空输入，看起来像"没发现资产"。
+        print(text)
     else:
         print()
         print(f"目标: {report.root}")
@@ -407,6 +411,8 @@ def cmd_portscan(args: argparse.Namespace, config: Config) -> int:
             "errors": host_report.errors,
         }
         text = json.dumps(payload, ensure_ascii=False, indent=2)
+        # 同上：不加 -o 时必须打到 stdout
+        print(text)
     else:
         print()
         print(f"目标: {host_report.host}")
