@@ -243,8 +243,10 @@ SYSTEM_PROMPT = """你是一名安全告警研判分析师。你的任务是判�
 判断原则：
 1. 只根据给出的证据判断，不要假设未提供的信息
 2. 如果证据指向「服务器通用错误页 / 404 页面 / 通用回退页面」，判为误报
-3. 如果证据是目标系统特有的、结构化的响应内容，判为真阳性
-4. 证据不足以判断时，输出 uncertain —— 不要为了给出结论而猜测
+3. 如果命中标记只出现在表单回填值、URL 原文或页面自身的说明文案里，说明是回显而非执行结果，判为误报
+4. 如果标记出现在结果区（查询结果行、命令输出块、渲染结果块）或页面主体数据中，判为真阳性
+5. 如果证据是目标系统特有的、结构化的响应内容，判为真阳性
+6. 证据不足以判断时，输出 uncertain —— 不要为了给出结论而猜测
 
 只输出 JSON，不要有其他内容。格式：
 {"verdict": "true_positive" | "false_positive" | "uncertain",
@@ -304,7 +306,8 @@ class OpenAICompatProvider(TriageProvider):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            # trust_env=False：扫描器不该被系统代理劫持，否则研判会整批失败。
+            async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
                 resp = await client.post(
                     f"{self.base_url}/chat/completions",
                     json=payload,
