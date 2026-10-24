@@ -37,7 +37,10 @@ jobs:
           # 教训：**本地用 PYTHONPATH 绕过安装问题，会掩盖「包没装好」这个真实缺陷。**
           # 使用者 clone 下来直接执行 `python -m asp.cli` 同样会失败。
           # CI 必须走和使用者完全一样的安装路径，否则它验证的不是真实场景。
-          pip install -e ".[dev]"
+          # 用 constraints 锁定间接依赖的版本：requirements.lock 由
+          # `uv pip compile pyproject.toml --extra dev --python-version 3.11` 生成，
+          # 只约束不安装 —— 包本身仍走 editable 安装，改代码立即生效。
+          pip install -e ".[dev]" -c requirements.lock
 
       - name: Lint (ruff)
         run: ruff check asp tests
@@ -93,6 +96,32 @@ jobs:
               {k: data[k] for k in ("target_reachable", "responses_ok")},
               ensure_ascii=False))
           PY
+
+  test-windows:
+    name: Windows (Python 3.12)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        # 只跑 Python 侧：PHP 断言需要 7.3/7.4 多版本，Windows runner 上装不划算，
+        # 那部分由 ubuntu 的 target 作业负责。这里守的是「代码在 Windows 上能跑」：
+        # 路径分隔符、文件锁、sqlite 并发这些差异，只在 Windows 上才暴露。
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" -c requirements.lock
+
+      - name: Lint (ruff)
+        run: ruff check asp tests
+
+      - name: Run tests
+        run: pytest -v --cov=asp --cov-report=term-missing --cov-fail-under=85
 
   build:
     name: Build package
