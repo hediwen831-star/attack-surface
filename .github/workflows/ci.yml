@@ -151,3 +151,16 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  docker:
+    name: Docker 镜像可构建
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建镜像
+        run: docker build -t asp:ci .
+
+      - name: 镜像可执行
+        run: docker run --rm asp:ci --version

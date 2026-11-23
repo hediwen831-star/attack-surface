@@ -5,7 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.1.3] - 2026-11-23
+
+### 修复
+
+- 负向对照请求丢弃了原 URL 的 query。对「必须带 query 才返回 200」的接口，
+  对照请求会得到 4xx，而 4xx 被当作「无法判定、保守放过」，通配响应检测
+  因此静默失效。现在保留 query，只替换路径最后一段。
+
+### 变更
+
+- 版本号统一到 0.1.2：`pyproject.toml` 此前停在 0.1.1，而 `__init__.py`
+  与看板已是 0.1.2，安装后的元数据与实际版本不一致。
 
 ## [0.1.2] - 2026-10-24
 
@@ -205,7 +216,8 @@
 - 内置指纹规则改为按相对包目录解析，而非相对工作目录。按工作目录解析时，从项目根
   目录之外执行会导致规则数静默降为 0，且没有任何报错。
 
-[Unreleased]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/hediwen831-star/attack-surface/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/hediwen831-star/attack-surface/releases/tag/v0.1.0

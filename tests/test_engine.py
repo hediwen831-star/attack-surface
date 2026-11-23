@@ -467,3 +467,21 @@ async def test_no_error_when_scan_succeeds(fake_client):
     client = fake_client({"/target": Response(url="http://x/target", status=200, content=b"ok")})
     result = await scan_target("http://x", [poc], client)
     assert not any("无效" in e for e in result.errors)
+
+
+def test_random_control_url_keeps_query():
+    """对照 URL 必须保留 query。
+
+    丢 query 时，需要参数的接口会返回 4xx，而 4xx 被判为「无法判定」，
+    通配检测静默失效 —— 这类失效没有日志、没有报错，最难发现。
+    """
+    from urllib.parse import urlparse
+
+    from asp.plugins.engine import _random_control_url
+
+    control = _random_control_url("http://example.com/api/users/123?token=abc&page=2")
+    parsed = urlparse(control)
+
+    assert parsed.path.startswith("/api/users/")
+    assert "123" not in parsed.path
+    assert parsed.query == "token=abc&page=2"

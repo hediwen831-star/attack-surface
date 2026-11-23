@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/hediwen831-star/attack-surface/actions/workflows/ci.yml/badge.svg)](https://github.com/hediwen831-star/attack-surface/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-433%20passed-brightgreen)](#测试)
+[![Tests](https://img.shields.io/badge/tests-434%20passed-brightgreen)](#测试)
 [![Ruff](https://img.shields.io/badge/lint-ruff%20clean-brightgreen)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-compose%20ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
@@ -12,7 +12,7 @@
 
 ```
 Python 3.11+ · asyncio · FastAPI 就绪 · SQLite/PostgreSQL · 自研 YAML PoC 引擎
-433 个单元测试 · ruff 零告警 · 零网络依赖的单测 · Web 看板 + REST 接口
+434 个单元测试 · ruff 零告警 · 零网络依赖的单测 · Web 看板 + REST 接口
 ```
 
 ---
@@ -342,6 +342,11 @@ requests:
 
 ## 设计取舍
 
+> **关于 TLS 校验**：`AsyncHttpClient` 默认 `verify_ssl=False`。
+> 测绘场景里自签名证书、过期证书很常见，严格校验会让大量目标直接扫不了；
+> 这个默认值是为了覆盖率，不代表可以用于需要证书可信的判断。
+> 需要严格校验时显式传 `verify_ssl=True`。
+
 这一节记录了各处设计取舍及其理由。
 
 ### 1. 为什么用 asyncio 而不是多线程？
@@ -488,7 +493,7 @@ attack-surface/
 │   │   └── fingerprints.yaml   # 46 条 Web 指纹规则
 │   └── pocs/                   # 内置检测插件
 ├── conf/config.example.yaml
-├── tests/                      # 433 个单元测试（全部离线）
+├── tests/                      # 434 个单元测试（全部离线）
 ├── .github/workflows/ci.yml
 ├── pyproject.toml
 └── requirements.txt
@@ -501,7 +506,7 @@ attack-surface/
 ```bash
 pip install -r requirements-dev.txt
 
-pytest -v            # 433 个用例
+pytest -v            # 434 个用例
 ruff check asp tests # 静态检查
 ```
 
@@ -520,12 +525,12 @@ ruff check asp tests # 静态检查
 | `test_builtin_pocs_are_valid` | 仓库内置 PoC 的自检（CI 守门人） |
 | `test_end_to_end_unreachable_target_is_not_reported_as_clean` | 目标连不上时**绝不能**报「无漏洞」 |
 | `test_json_output_is_parseable_and_has_reachability` | `--json` 必须真的输出可解析的 JSON |
+| `test_scan_target_survives_broken_poc` | 单个坏 PoC 不能中断整次扫描 |
 
 最后两条来自一次真实的教训：`cli.py` 长期是全项目唯一 0% 覆盖的模块，
 结果里面藏着一个「`asp poc run --json` 不带 `-o` 就什么都不打印」的 bug，
 管道下游拿到的永远是空输入。补上入口层测试后，
 该模块覆盖率 0% → 52%，全项目 65% → 74%。
-| `test_scan_target_survives_broken_poc` | 单个坏 PoC 不能中断整次扫描 |
 
 ---
 
@@ -540,8 +545,8 @@ python -m asp.cli poc run http://127.0.0.1:8080 --dir ../vulnlab/pocs
 
 ```
 目标: http://127.0.0.1:8080
-执行 PoC: 19   耗时: 3.72s
-命中: 27
+执行 PoC: 21   耗时: 5.84s
+命中: 31
 
 critical  vulnlab-php-unserialize-pop-chain   .../unserialize/low.php      1.00
 high      vulnlab-xxe-external-entity         .../xxe/low.php              1.00
@@ -549,36 +554,15 @@ high      vulnlab-sqli-low-union              .../sqli/low.php?id=-1%20UNION... 
 …
 ```
 
-13 个场景全部命中（合计 27 处），靶场的 `high` 档（已修复）是天然的
+13 个场景全部命中（合计 31 处），靶场的 `high` 档（已修复）是天然的
 误报诱饵，引擎若在这里报漏洞，说明判定逻辑有问题。
 
-19 个 PoC = 靶场的 14 个 + 本引擎自带的 5 个（`--dir` 是追加目录，不是替换）。
+21 个 PoC = 靶场的 16 个 + 本引擎自带的 5 个（`--dir` 是追加目录，不是替换）。
 
-> ⚠️ 「27 处命中 / 13 个场景」是靶场跑在 Linux 上的结果。
-> Windows 下 `php -S` 的 CWD 语义与 Linux 不同，靶场的 XXE 场景会失效，
-> 命中数降为 25（12 个场景）。详见 VulnLab 仓库的 `tests/verify_lab.py` 说明。
-
-### 目标不可达不会被报成「没有漏洞」
-
-这是评测基准最容易骗过使用者的一环。目标连不上时命中数同样是 0，
-但输出必须能区分这两种情况：
-
-```
-# 靶场没起来（或代理挡下返回 502）
-命中: 0
-
-⚠️  目标不可达：没有任何请求成功。
-    本次结果【无效】，不能据此判断目标没有漏洞。
-    错误明细（共 1 条，显示前 3 条）：
-      · 目标 http://127.0.0.1:8080 的所有响应都是 5xx（18/18）——
-        本次结果无效，不能据此判断「没有漏洞」。
-        常见原因：目标服务未启动、反向代理/HTTP 代理返回 502、或上游应用崩溃。
-```
-
-退出码同步区分：`0` 无洞 / `1` 有洞 / `2` 目标不可达。
-CI 里跑基准测试时，「靶场没起来」和「靶场真的没洞」需要完全不同的处置方式。
-
----
+> 早期在 Windows 下 `php -S` 的 CWD 语义与 Linux 不同，XXE/反序列化的
+> 相对路径会失效，命中数只有 25（12 个场景）。靶场改用
+> `html/lib/paths.php` 统一计算路径后，两个平台结果一致 ——
+> 上面的 31 处是 Windows 实测结果。
 
 ## 路线图
 
@@ -589,7 +573,7 @@ CI 里跑基准测试时，「靶场没起来」和「靶场真的没洞」需�
 - [x] YAML PoC 引擎（4 种匹配器 + 提取器 + 白名单 DSL）
 - [x] 负向对照校验
 - [x] 目标可达性判定（不可达时拒绝给出「未发现漏洞」结论）
-- [x] 433 个离线单元测试 + GitHub Actions CI
+- [x] 434 个离线单元测试 + GitHub Actions CI
 - [x] 端口扫描与服务识别（asyncio 连接扫描 + 两阶段 banner 抓取）
 - [x] Web 指纹识别（纯 Python MurmurHash3 + 46 条规则 + 置信度累加）
 - [x] 报告导出（HTML / Markdown / JSON，跨任务聚合）

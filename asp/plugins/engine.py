@@ -225,6 +225,13 @@ def _random_control_url(url: str) -> str:
     directory = path.rsplit("/", 1)[0] if "/" in path.rsplit("?", 1)[0][1:] else ""
     suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
     control_path = f"{directory}/{CONTROL_PREFIX}{suffix}"
+
+    # 保留原 query 很重要：有些接口缺了必需参数会直接 4xx，
+    # 而 4xx 在调用侧被当作「无法判定、保守放过」——
+    # 丢掉 query 等于让这些接口的通配检测静默失效。
+    if parsed.query:
+        control_path = f"{control_path}?{parsed.query}"
+
     return f"{parsed.scheme}://{parsed.netloc}{control_path}"
 
 
